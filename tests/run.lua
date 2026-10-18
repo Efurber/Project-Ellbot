@@ -69,6 +69,19 @@ local function rainbowColors(addon)
     return colors
 end
 
+local function particleState(addon)
+    local values = {}
+    for _, texture in ipairs(addon.classEffects.particles) do
+        if texture:IsShown() then
+            local _, _, _, x, y = texture:GetPoint()
+            for _, value in ipairs({ x, y, texture:GetWidth(), texture:GetHeight(), texture:GetAlpha(), texture:GetRotation() }) do
+                values[#values + 1] = value
+            end
+        end
+    end
+    return values
+end
+
 test("manifest admits mocked Forever 1.60.1 and Retail clients for XP and settings", function()
     for _, client in ipairs({ { 16001, "1.60.1", 60 }, { 120100, "12.1.0", 90 }, { 120105, "12.1.5", 90 } }) do
         local addon, state = loadAddon(nil, { interfaceVersion = client[1] })
@@ -156,6 +169,7 @@ end)
 
 test("settings persist dimensions, appearance, and colors", function()
     local addon = loadAddon()
+    addon:SetSetting("displayMode", "custom")
     addon:SetSetting("width", 840)
     addon:SetSetting("height", 30)
     addon:SetSetting("scale", 1.3)
@@ -180,13 +194,14 @@ end)
 
 test("invalid saved settings are sanitized and resets are independent", function()
     local addon = loadAddon({
-        mode = "unknown", width = -100, height = 10000, scale = "broken",
+        mode = "unknown", displayMode = "unknown", width = -100, height = 10000, scale = "broken",
         speed = -1, brightness = 9, glow = -3, showText = "yes",
         color = { r = -1, g = 2, b = "broken" },
         position = { point = "INVALID", relativePoint = {}, x = 0 / 0, y = "broken" },
     })
     local settings = addon:GetSettings()
     equal(settings.mode, "rainbow")
+    equal(settings.displayMode, "native")
     assert(settings.width >= 240 and settings.width <= 1200)
     assert(settings.height >= 12 and settings.height <= 48)
     assert(type(settings.scale) == "number")
@@ -211,7 +226,7 @@ test("invalid saved settings are sanitized and resets are independent", function
 end)
 
 test("max level hiding and preview restore actual XP", function()
-    local addon, state = loadAddon(nil, { interfaceVersion = 120100, playerLevel = 90, xp = 0, xpMax = 0 })
+    local addon, state = loadAddon({ displayMode = "custom" }, { interfaceVersion = 120100, playerLevel = 90, xp = 0, xpMax = 0 })
     assert(not addon.bar:IsShown(), "maximum-level bar should hide by default")
     addon:SetPreview(true)
     assert(addon.bar:IsShown(), "preview should remain usable at maximum level")
@@ -278,6 +293,7 @@ end)
 
 test("dragging requires unlock and saves the resulting position", function()
     local addon, state = loadAddon()
+    addon:SetSetting("displayMode", "custom")
     state:call(addon.bar, "OnDragStart", "LeftButton")
     assert(not addon.bar.moving, "locked XP bar must not move")
     addon:SetSetting("locked", false)
@@ -305,6 +321,7 @@ test("options controls change the live bar and preview closes cleanly", function
     local window = addon.optionsFrame
     assert(window:IsShown())
     assert(addon.previewEnabled, "opening settings should display a sample preview")
+    state:call(findCaption(state, "Custom replacement"), "OnClick")
     state:call(findCaption(state, "Breathing"), "OnClick")
     equal(addon:GetSettings().mode, "pulse")
     local width = find(state, function(object) return object.kind == "Slider" and object.key == "width" end)
@@ -460,6 +477,325 @@ test("minimap launcher follows square and round edges after resizing", function(
     _, _, _, x, y = addon.minimapButton:GetPoint()
     near(x, -95 / math.sqrt(2), "round shape should follow the ellipse instead of the corner")
     near(y, -55 / math.sqrt(2))
+end)
+
+test("native mode mounts one skin on Blizzard XP and preserves reputation and honor", function()
+    local addon, state = loadAddon()
+    equal(addon:GetSettings().displayMode, "native", "the default should skin Blizzard XP")
+    assert(addon.nativeActive)
+    equal(addon.nativeTarget, state.nativeXP)
+    equal(addon.bar:GetParent(), state.nativeXP)
+    local _, anchor = addon.bar:GetPoint()
+    equal(anchor, state.nativeStatusBar, "skin should follow the real XP status bar")
+    near(addon.bar:GetWidth(), 1000)
+    near(addon.bar:GetHeight(), 14)
+    near(state.nativeXP:GetAlpha(), 1, "native XP frame should remain available")
+    assert(state.nativeXP:IsMouseEnabled())
+    near(state.nativeXP.OverlayFrame:GetAlpha(), 0, "native text should not duplicate skin text")
+    near(state.nativeXP.ExhaustionTick:GetAlpha(), 0)
+    near(state.nativeXP.ExhaustionLevelFillBar:GetAlpha(), 0)
+    assert(not state.nativeXP.OverlayFrame:IsMouseEnabled())
+    assert(not state.nativeXP.ExhaustionTick:IsMouseEnabled(), "native rested tooltip must not intercept skin clicks")
+    equal(state.nativeXP.ExhaustionTick:GetScript("OnEnter"), state.nativeXP.originalTickOnEnter,
+        "skinning should preserve Blizzard's rested callback")
+    local r, g, b = state.nativeStatusBar:GetStatusBarColor()
+    local skinR, skinG, skinB = addon.fill:GetStatusBarColor()
+    near(r, skinR); near(g, skinG); near(b, skinB)
+    for _, neighbor in ipairs({ state.nativeManager, state.nativeContainer, state.nativeReputation, state.nativeHonor }) do
+        near(neighbor:GetAlpha(), 1, "non-XP tracking visuals must remain untouched")
+        assert(neighbor:IsShown())
+    end
+    assert(state.nativeReputation:IsMouseEnabled() and state.nativeHonor:IsMouseEnabled())
+    local skinCount = 0
+    for _, object in ipairs(state.objects) do
+        if object.name == "ForeverXPBar" then skinCount = skinCount + 1 end
+    end
+    equal(skinCount, 1, "there must be one skin, without a floating duplicate")
+    addon:SetSetting("locked", false)
+    addon:SetSetting("width", 840)
+    near(addon.bar:GetWidth(), 1000, "native width should follow Blizzard rather than custom dimensions")
+    state:call(addon.bar, "OnDragStart", "LeftButton")
+    assert(not addon.bar.moving, "native XP should follow Blizzard layout instead of dragging")
+end)
+
+test("custom and preview suppress only native XP and restore native skin on return", function()
+    local addon, state = loadAddon()
+    addon:SetSetting("displayMode", "custom")
+    assert(not addon.nativeActive)
+    equal(addon.bar:GetParent(), UIParent)
+    near(addon.bar:GetWidth(), addon:GetSettings().width)
+    for _, xp in ipairs({ state.nativeXP, state.secondaryNativeXP }) do
+        near(xp:GetAlpha(), 0, "custom replacement must suppress every native XP copy")
+        assert(not xp:IsMouseEnabled())
+        assert(not xp.StatusBar:IsMouseEnabled())
+        assert(not xp.OverlayFrame:IsMouseEnabled())
+        assert(not xp.ExhaustionTick:IsMouseEnabled(), "suppressed XP must not leave an invisible rested mouse target")
+        equal(xp.ExhaustionTick:GetScript("OnEnter"), xp.originalTickOnEnter)
+        assert(xp:IsShown(), "replacement should preserve Blizzard's visibility bookkeeping")
+        near(xp.OverlayFrame:GetAlpha(), 1, "native subregion settings should restore when the whole XP frame is suppressed")
+        local r, g, b = xp.StatusBar:GetStatusBarColor()
+        near(r, 0.58); near(g, 0); near(b, 0.55)
+    end
+    near(state.nativeReputation:GetAlpha(), 1)
+    near(state.nativeHonor:GetAlpha(), 1)
+    assert(state.nativeReputation:IsMouseEnabled() and state.nativeHonor:IsMouseEnabled())
+    addon:SetSetting("displayMode", "native")
+    assert(addon.nativeActive)
+    equal(addon.bar:GetParent(), state.nativeXP)
+    near(state.nativeXP:GetAlpha(), 1)
+    assert(state.nativeXP:IsMouseEnabled())
+    addon:ToggleOptions()
+    assert(addon.previewEnabled)
+    equal(addon.bar:GetParent(), UIParent, "settings sample should use the movable preview")
+    near(state.nativeXP:GetAlpha(), 0, "sample preview should avoid a second visible XP bar")
+    near(state.nativeReputation:GetAlpha(), 1)
+    addon:ToggleOptions()
+    assert(not addon.previewEnabled and addon.nativeActive)
+    equal(addon.bar:GetParent(), state.nativeXP)
+    near(state.nativeXP:GetAlpha(), 1)
+    equal(addon.fill:GetValue(), state.xp)
+end)
+
+test("native skin follows XP resize, visibility, manager refresh, and container changes", function()
+    local addon, state = loadAddon()
+    state.nativeStatusBar:SetSize(780, 18)
+    near(addon.bar:GetWidth(), 780, "native status bar resize should update the skin")
+    near(addon.bar:GetHeight(), 18)
+    state.nativeXP:Hide()
+    assert(not addon.bar:IsVisible(), "hidden native XP must not leave a floating duplicate")
+    state.nativeXP:Show()
+    assert(addon.bar:IsVisible())
+    state.nativeStatusBar:SetStatusBarColor(1, 0, 0)
+    state.nativeManager:UpdateBarVisuals()
+    local r, g, b = state.nativeStatusBar:GetStatusBarColor()
+    local skinR, skinG, skinB = addon.fill:GetStatusBarColor()
+    near(r, skinR); near(g, skinG); near(b, skinB)
+    state.nativeContainer:Hide()
+    state.secondaryNativeContainer:Show()
+    state.nativeManager:UpdateBarsShown()
+    equal(addon.nativeTarget, state.secondaryNativeXP, "skin should move to Blizzard's visible XP container")
+    equal(addon.bar:GetParent(), state.secondaryNativeXP)
+    assert(addon.bar:IsVisible())
+end)
+
+test("native mode discovers XP bars initialized after login", function()
+    local addon, state = loadAddon(nil, { createNativeBars = false })
+    assert(not addon.nativeActive)
+    equal(addon.bar:GetParent(), UIParent)
+    assert(addon.bar:IsVisible(), "missing native XP should provide the supported custom fallback")
+    state:createNativeXPBars()
+    state:fire("PLAYER_ENTERING_WORLD")
+    assert(addon.nativeActive)
+    equal(addon.nativeTarget, state.nativeXP)
+    equal(addon.bar:GetParent(), state.nativeXP)
+    assert(addon.bar:IsVisible())
+end)
+
+test("custom replacement hides XP chrome and restores it for reputation, honor, and native preview return", function()
+    local addon, state = loadAddon()
+    local containers = { state.nativeContainer, state.secondaryNativeContainer }
+    local original = {}
+    for _, container in ipairs(containers) do
+        original[container.BarFrameTexture] = container.BarFrameTexture:GetAlpha()
+        for divider in container.HorizontalDividersPool:EnumerateActive() do original[divider] = divider:GetAlpha() end
+    end
+    local function chrome(container, hidden)
+        near(container.BarFrameTexture:GetAlpha(), hidden and 0 or original[container.BarFrameTexture], "container border")
+        for divider in container.HorizontalDividersPool:EnumerateActive() do
+            near(divider:GetAlpha(), hidden and 0 or original[divider], "container divider")
+        end
+        near(container:GetAlpha(), 1, "suppressing XP chrome must preserve the shared container")
+    end
+    addon:SetSetting("displayMode", "custom")
+    chrome(state.nativeContainer, true)
+    chrome(state.secondaryNativeContainer, true)
+    local pool = state.nativeContainer.HorizontalDividersPool
+    local released = next(pool.activeObjects)
+    pool.activeObjects[released] = nil
+    state.nativeManager:UpdateBarsShown()
+    near(released:GetAlpha(), original[released], "released pooled dividers must regain their original alpha")
+    pool.activeObjects[released] = true
+    state.nativeManager:UpdateBarVisuals()
+    near(released:GetAlpha(), 0, "reacquired XP dividers should be suppressed again")
+    state.nativeContainer.pendingBarToShowIndex = StatusTrackingBarInfo.BarsEnum.Reputation
+    state.nativeContainer:ApplyPendingBarToShow()
+    state.secondaryNativeContainer.pendingBarToShowIndex = StatusTrackingBarInfo.BarsEnum.Honor
+    state.secondaryNativeContainer:ApplyPendingBarToShow()
+    chrome(state.nativeContainer, false)
+    chrome(state.secondaryNativeContainer, false)
+    state.nativeContainer.pendingBarToShowIndex = StatusTrackingBarInfo.BarsEnum.Experience
+    state.nativeContainer:ApplyPendingBarToShow()
+    chrome(state.nativeContainer, true)
+    chrome(state.secondaryNativeContainer, false)
+    addon:SetSetting("displayMode", "native")
+    chrome(state.nativeContainer, false)
+    addon:ToggleOptions()
+    chrome(state.nativeContainer, true)
+    chrome(state.secondaryNativeContainer, false)
+    addon:ToggleOptions()
+    chrome(state.nativeContainer, false)
+    chrome(state.secondaryNativeContainer, false)
+end)
+
+test("native placement defers protected changes during combat and resumes afterwards", function()
+    local addon, state = loadAddon(nil, { nativeProtected = true })
+    state.inCombat = true
+    addon:SetSetting("displayMode", "custom")
+    assert(addon.nativePlacementDeferred)
+    equal(addon.bar:GetParent(), state.nativeXP, "combat should preserve the active protected placement")
+    near(state.nativeXP:GetAlpha(), 1)
+    state.inCombat = false
+    state:fire("PLAYER_REGEN_ENABLED")
+    assert(not addon.nativePlacementDeferred)
+    equal(addon.bar:GetParent(), UIParent)
+    near(state.nativeXP:GetAlpha(), 0)
+
+    local startup, startupState = loadAddon(nil, { inCombat = true, nativeProtected = true })
+    assert(startup.nativePlacementDeferred)
+    assert(not startup.bar:IsShown(), "startup should not draw before protected placement is available")
+    startupState.inCombat = false
+    startupState:fire("PLAYER_REGEN_ENABLED")
+    assert(startup.nativeActive)
+    equal(startup.bar:GetParent(), startupState.nativeXP)
+    assert(startup.bar:IsVisible())
+end)
+
+test("ordinary unprotected native XP keeps updating and animating during combat", function()
+    local addon, state = loadAddon(nil, { inCombat = true })
+    assert(addon.nativeActive and not addon.nativePlacementDeferred)
+    state.xp = 550
+    state:fire("PLAYER_XP_UPDATE", "player")
+    equal(addon.fill:GetValue(), 550)
+    equal(addon.bar:GetParent(), state.nativeXP)
+    local colors = rainbowColors(addon)
+    state:tick(0.2)
+    assert(different(colors, rainbowColors(addon)), "unprotected native effects should animate in normal combat")
+end)
+
+test("class themes have distinct particles, animated gradients, and heavy void smoke", function()
+    local addon, state = loadAddon()
+    local expectedKinds = {
+        flame = { flame = true, ember = true },
+        frost = { frostspark = true, frostshard = true },
+        arcane = { arcanerune = true, arcaneorb = true },
+        void = { voidsmoke = true, voidrim = true },
+    }
+    local signatures = {}
+    for _, mode in ipairs({ "flame", "frost", "arcane", "void" }) do
+        addon:SetSetting("mode", mode)
+        equal(addon.classEffects.mode, mode)
+        assert(addon.classEffects.frame:IsShown(), "themed particles should be visible with earned XP")
+        assert(not addon.sweep:IsShown(), "themed particles should replace the generic highlight")
+        local seen, visible = {}, 0
+        for _, texture in ipairs(addon.classEffects.particles) do
+            if texture:IsShown() then
+                visible = visible + 1
+                assert(expectedKinds[mode][texture.effectKind], "theme should use its own particle shapes")
+                seen[texture.effectKind] = true
+                local _, _, _, x = texture:GetPoint()
+                assert(x >= 0 and x <= addon.trackWidth * addon.state.ratio, "particles must follow earned XP horizontally")
+                if texture.effectKind == "voidsmoke" then
+                    equal(texture:GetBlendMode(), "BLEND", "heavy smoke needs dark centers")
+                    local r, g, b = texture:GetVertexColor()
+                    assert(r < 0.08 and g < 0.08 and b < 0.08, "void smoke should be dark rather than a bright purple glow")
+                elseif texture.effectKind == "voidrim" then
+                    equal(texture:GetBlendMode(), "ADD", "void should have separate luminous smoke rims")
+                end
+            end
+        end
+        for kind in pairs(expectedKinds[mode]) do assert(seen[kind], "missing themed particle " .. kind) end
+        assert(visible > 0 and visible <= 20, "effects should reuse a bounded particle pool")
+        local colors, positions = rainbowColors(addon), particleState(addon)
+        signatures[mode] = colors
+        state:tick(0.2)
+        assert(different(colors, rainbowColors(addon)), "theme gradients should animate")
+        assert(different(positions, particleState(addon)), "theme particles should move")
+    end
+    assert(different(signatures.flame, signatures.frost))
+    assert(different(signatures.frost, signatures.arcane))
+    assert(different(signatures.arcane, signatures.void))
+end)
+
+test("class themes respect reduced motion, empty XP, glow, and standard-mode cleanup", function()
+    local addon, state = loadAddon()
+    for _, mode in ipairs({ "flame", "frost", "arcane", "void" }) do
+        addon:SetSetting("mode", mode)
+        addon:SetSetting("reducedMotion", true)
+        local colors, phase = rainbowColors(addon), addon.state.phase
+        assert(not addon.classEffects.frame:IsShown())
+        for _, texture in ipairs(addon.classEffects.particles) do assert(not texture:IsShown()) end
+        state:tick(0.2)
+        equal(addon.state.phase, phase)
+        assert(not different(colors, rainbowColors(addon)), "reduced motion should freeze themed gradients")
+        addon:SetSetting("reducedMotion", false)
+        assert(addon.classEffects.frame:IsShown())
+    end
+    addon:SetSetting("glow", 0)
+    assert(not addon.classEffects.frame:IsShown())
+    addon:SetSetting("glow", 0.7)
+    state.xp = 0
+    state:fire("PLAYER_XP_UPDATE", "player")
+    assert(not addon.classEffects.frame:IsShown(), "empty XP must not display free-floating class particles")
+    state.xp = 250
+    state:fire("PLAYER_XP_UPDATE", "player")
+    assert(addon.classEffects.frame:IsShown())
+    addon:SetSetting("mode", "rainbow")
+    equal(addon.classEffects.mode, nil)
+    assert(not addon.classEffects.frame:IsShown())
+    for _, texture in ipairs(addon.classEffects.particles) do assert(not texture:IsShown()) end
+    addon:SetSetting("mode", "solid")
+    for _, texture in ipairs(addon.rainbowSegments) do assert(not texture:IsShown()) end
+end)
+
+test("class mode resolves player class and theme choices persist without random particle jumps", function()
+    local addon, state = loadAddon()
+    addon:SetSetting("mode", "class")
+    for class, mode in pairs({ MAGE = "arcane", DEATHKNIGHT = "frost", WARLOCK = "void", PRIEST = "void", WARRIOR = "flame" }) do
+        state.playerClass = class
+        state:fire("PLAYER_ENTERING_WORLD")
+        equal(addon:ResolveClassEffectMode(), mode, "automatic effect for " .. class)
+        equal(addon.classEffects.mode, mode)
+    end
+    addon:SetSetting("mode", "flame")
+    local initial = particleState(addon)
+    state:tick(0.2)
+    assert(different(initial, particleState(addon)))
+    local reloaded = loadAddon(ForeverXPDB)
+    equal(reloaded:GetSettings().mode, "flame")
+    assert(not different(initial, particleState(reloaded)), "particle placement should be deterministic after reload")
+    reloaded:ResetSettings()
+    equal(reloaded:GetSettings().displayMode, "native")
+    equal(reloaded:GetSettings().mode, "rainbow")
+    assert(not reloaded.classEffects.frame:IsShown())
+end)
+
+test("theme and display selectors work through settings and slash commands", function()
+    local addon, state = loadAddon()
+    addon:ToggleOptions()
+    local width = find(state, function(object) return object.kind == "Slider" and object.key == "width" end)
+    local hideAtMax = find(state, function(object) return object.kind == "CheckButton" and object.key == "hideAtMax" end)
+    assert(not width:IsEnabled() and not hideAtMax:IsEnabled(), "native controls should leave geometry and visibility to Blizzard")
+    for mode, caption in pairs({ flame = "Flame", frost = "Frost", arcane = "Arcane", void = "Shadow / Void", class = "By class" }) do
+        state:call(findCaption(state, caption), "OnClick")
+        equal(addon:GetSettings().mode, mode)
+    end
+    for _, mode in ipairs({ "flame", "frost", "arcane", "void", "class" }) do
+        SlashCmdList.FOREVERXP(mode)
+        equal(addon:GetSettings().mode, mode)
+        local selected = find(state, function(object) return object.mode == mode end)
+        assert(selected.selected, "slash changes should refresh the selected effect")
+    end
+    SlashCmdList.FOREVERXP("custom")
+    equal(addon:GetSettings().displayMode, "custom")
+    assert(width:IsEnabled() and hideAtMax:IsEnabled(), "custom placement should enable custom geometry and visibility")
+    state:call(findCaption(state, "Blizzard bar"), "OnClick")
+    equal(addon:GetSettings().displayMode, "native")
+    addon:ToggleOptions()
+    assert(addon.nativeActive)
+    SlashCmdList.FOREVERXP("custom")
+    equal(addon.bar:GetParent(), UIParent)
+    SlashCmdList.FOREVERXP("native")
+    equal(addon.bar:GetParent(), state.nativeXP)
 end)
 
 for _, item in ipairs(tests) do

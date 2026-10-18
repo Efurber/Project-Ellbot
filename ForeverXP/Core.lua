@@ -9,9 +9,14 @@ local validPoints = {
     TOPLEFT = true, TOP = true, TOPRIGHT = true, LEFT = true, CENTER = true,
     RIGHT = true, BOTTOMLEFT = true, BOTTOM = true, BOTTOMRIGHT = true,
 }
+local validModes = {
+    rainbow = true, solid = true, pulse = true, flame = true,
+    frost = true, arcane = true, void = true, class = true,
+}
 
 addon.defaults = {
     mode = "rainbow",
+    displayMode = "native",
     color = { r = 0.1, g = 0.75, b = 1 },
     speed = 0.35,
     brightness = 0.85,
@@ -64,8 +69,11 @@ local function sanitize(saved)
     for key in pairs(booleanKeys) do
         if type(saved[key]) == "boolean" then result[key] = saved[key] end
     end
-    if saved.mode == "solid" or saved.mode == "rainbow" or saved.mode == "pulse" then
+    if validModes[saved.mode] then
         result.mode = saved.mode
+    end
+    if saved.displayMode == "native" or saved.displayMode == "custom" then
+        result.displayMode = saved.displayMode
     end
     if type(saved.color) == "table" then
         for _, key in ipairs({ "r", "g", "b" }) do
@@ -122,8 +130,10 @@ function addon:SetSetting(key, value)
         self.db[key] = clamp(value, limits[1], limits[2], self.db[key])
     elseif booleanKeys[key] and type(value) == "boolean" then
         self.db[key] = value
-    elseif key == "mode" and (value == "solid" or value == "rainbow" or value == "pulse") then
+    elseif key == "mode" and validModes[value] then
         self.db.mode = value
+    elseif key == "displayMode" and (value == "native" or value == "custom") then
+        self.db.displayMode = value
     else
         return
     end
@@ -155,15 +165,25 @@ end
 
 function addon:ApplyLayout()
     local settings, bar = self.db, self.bar
-    bar:SetSize(settings.width, settings.height)
-    bar:SetScale(settings.scale)
-    if not self.dragging then
+    local nativeActive, nativeWidth, nativeHeight
+    if self.ApplyBarPlacement then
+        nativeActive, nativeWidth, nativeHeight = self:ApplyBarPlacement()
+        if self.nativePlacementDeferred then return end
+    end
+    local barWidth = nativeActive and nativeWidth or settings.width
+    local barHeight = nativeActive and nativeHeight or settings.height
+    bar:SetSize(barWidth, barHeight)
+    bar:SetScale(nativeActive and 1 or settings.scale)
+    if not nativeActive and not self.dragging then
         local position = settings.position
         bar:ClearAllPoints()
         bar:SetPoint(position.point, UIParent, position.relativePoint, position.x, position.y)
     end
-    bar:SetMovable(not settings.locked)
-    local width, height = settings.width - 10, settings.height - 8
+    bar:SetMovable(not nativeActive and not settings.locked)
+    bar:SetBackdropColor(0.025, 0.03, 0.055, nativeActive and 0 or 0.95)
+    bar:SetBackdropBorderColor(0.2, 0.24, 0.32, nativeActive and 0 or 0.95)
+    local width = math.max(1, barWidth - (nativeActive and 0 or 10))
+    local height = math.max(1, barHeight - (nativeActive and 0 or 8))
     self.trackWidth, self.trackHeight = width, height
     self.track:SetSize(width, height)
     self.effectCanvas:SetWidth(width)
@@ -187,6 +207,10 @@ function addon:UpdateXP()
     state.secret = secret(xp) or secret(maxXP) or secret(rested) or secret(level)
     -- XP is public in current Retail. Hide gracefully if a future client restricts it.
     if state.secret then self.bar:Hide(); return end
+    if self.nativePlacementDeferred and not self.nativePlacementReady then
+        if not self.bar.IsProtected or not self.bar:IsProtected() then self.bar:Hide() end
+        return
+    end
     xp = isNumber(xp) and max(0, xp) or 0
     maxXP = isNumber(maxXP) and max(0, maxXP) or 0
     rested = isNumber(rested) and max(0, rested) or 0
@@ -220,6 +244,7 @@ function addon:UpdateXP()
 end
 
 function addon:Paint()
+    if not self.trackWidth or not self.trackHeight or self.nativePlacementDeferred then return end
     local settings, state = self.db, self.state
     local phase = settings.reducedMotion and 0 or state.phase
     local red, green, blue = settings.color.r, settings.color.g, settings.color.b
@@ -239,13 +264,22 @@ function addon:Paint()
         red, green, blue = red * intensity, green * intensity, blue * intensity
         for _, segment in ipairs(self.rainbowSegments) do segment:Hide() end
     end
+    local themed = false
+    if self.PaintClassEffect then
+        local effectRed, effectGreen, effectBlue = self:PaintClassEffect()
+        if effectRed then
+            red, green, blue = effectRed, effectGreen, effectBlue
+            themed = true
+        end
+    end
     self.fill:SetStatusBarColor(red, green, blue, 1)
+    if self.PaintNativeBar then self:PaintNativeBar(red, green, blue) end
     local breathing = (settings.reducedMotion or settings.mode == "solid") and 0.8 or (0.7 + 0.3 * (sin(phase * math.pi * 4) + 1) / 2)
     self.leadingGlow:SetVertexColor(red, green, blue)
     self.leadingGlow:SetAlpha(settings.glow * 0.65 * breathing)
     self.edgeTop:SetColorTexture(red, green, blue, settings.glow * 0.65)
     self.edgeBottom:SetColorTexture(red, green, blue, settings.glow * 0.3)
-    self.sweep:SetShown(not settings.reducedMotion and settings.mode ~= "solid" and settings.glow > 0)
+    self.sweep:SetShown(not themed and not settings.reducedMotion and settings.mode ~= "solid" and settings.glow > 0)
     self.sweep:SetAlpha(settings.glow * 0.4)
     local sweepWidth = max(40, self.trackWidth * 0.12)
     local sweepX = ((phase * 3) % 1) * (self.trackWidth * state.ratio + sweepWidth) - sweepWidth / 2
@@ -257,6 +291,13 @@ end
 function addon:Refresh()
     if not self.bar or not self.db then return end
     self:ApplyLayout()
+    if self.nativePlacementDeferred then
+        if not self.nativePlacementReady and (not self.bar.IsProtected or not self.bar:IsProtected()) then
+            self.bar:Hide()
+        end
+        if self.RefreshMinimapButton then self:RefreshMinimapButton() end
+        return
+    end
     self:UpdateXP()
     self:Paint()
     if self.RefreshMinimapButton then self:RefreshMinimapButton() end
@@ -279,7 +320,11 @@ function addon:ShowTooltip()
         if state.xpLocked then GameTooltip:AddLine("Experience gain is disabled.", 1, 0.7, 0.3) end
     end
     GameTooltip:AddLine("Right-click for appearance settings.", 0.65, 0.65, 0.65)
-    if not self.db.locked then GameTooltip:AddLine("Drag to move the bar.", 0.65, 0.65, 0.65) end
+    if self.nativeActive then
+        GameTooltip:AddLine("Position follows Blizzard's XP bar layout.", 0.65, 0.65, 0.65)
+    elseif not self.db.locked then
+        GameTooltip:AddLine("Drag to move the bar.", 0.65, 0.65, 0.65)
+    end
     GameTooltip:Show()
 end
 
@@ -334,6 +379,7 @@ function addon:CreateBar()
     sweep:SetBlendMode("ADD")
 
     local overlay = CreateFrame("Frame", nil, bar)
+    self.overlay = overlay
     overlay:SetAllPoints()
     overlay:SetFrameLevel(layer:GetFrameLevel() + 2)
     local leadingGlow = overlay:CreateTexture(nil, "ARTWORK")
@@ -362,7 +408,7 @@ function addon:CreateBar()
         if button == "RightButton" then addon:ToggleOptions() end
     end)
     bar:SetScript("OnDragStart", function(frame)
-        if addon.db.locked then return end
+        if addon.db.locked or addon.nativeActive then return end
         addon.dragging = true
         frame:StartMoving()
     end)
@@ -378,13 +424,14 @@ function addon:CreateBar()
         }
     end)
     bar:SetScript("OnUpdate", function(_, elapsed)
-        if addon.db.reducedMotion or addon.db.mode == "solid" then return end
+        if addon.nativePlacementDeferred or addon.db.reducedMotion or addon.db.mode == "solid" then return end
         addon.elapsed = addon.elapsed + min(elapsed, 0.25)
         if addon.elapsed < UPDATE_INTERVAL then return end
         addon.state.phase = (addon.state.phase + addon.elapsed * addon.db.speed * 0.25) % 1
         addon.elapsed = 0
         addon:Paint()
     end)
+    bar:Hide()
 end
 
 local function say(message)
@@ -396,7 +443,7 @@ local function slashCommand(message)
     if command == "lock" then
         addon:SetSetting("locked", not addon.db.locked)
         if addon.RefreshOptions then addon:RefreshOptions() end
-        say(addon.db.locked and "Bar locked." or "Bar unlocked. Drag it to move.")
+        say(addon.db.locked and "Custom bar locked." or "Custom bar unlocked.")
     elseif command == "reset" then
         addon:ResetSettings()
         if addon.RefreshOptions then addon:RefreshOptions() end
@@ -408,13 +455,17 @@ local function slashCommand(message)
         addon:SetSetting("showMinimap", not addon.db.showMinimap)
         if addon.RefreshOptions then addon:RefreshOptions() end
         say(addon.db.showMinimap and "Minimap button shown." or "Minimap button hidden. Use /fxp minimap to show it again.")
-    elseif command == "solid" or command == "rainbow" or command == "pulse" then
+    elseif command == "native" or command == "custom" then
+        addon:SetSetting("displayMode", command)
+        if addon.RefreshOptions then addon:RefreshOptions() end
+        say(command == "native" and "Effects attached to Blizzard's XP bar." or "Custom replacement enabled. Blizzard's XP bars are hidden.")
+    elseif validModes[command] then
         addon:SetSetting("mode", command)
         if addon.RefreshOptions then addon:RefreshOptions() end
     elseif command == "" or command == "options" then
         addon:ToggleOptions()
     else
-        say("/fxp opens settings. Commands: rainbow, solid, pulse, lock, preview, minimap, reset.")
+        say("/fxp opens settings. Effects: rainbow, solid, pulse, flame, frost, arcane, void, class. Commands: native, custom, lock, preview, minimap, reset.")
     end
 end
 
@@ -425,18 +476,22 @@ addon.events:RegisterEvent("ADDON_LOADED")
 addon.events:RegisterEvent("PLAYER_LOGIN")
 addon.events:SetScript("OnEvent", function(frame, event, unit)
     if event == "ADDON_LOADED" then
-        if unit ~= addonName then return end
+        if unit ~= addonName then
+            if addon.bar then addon:Refresh() end
+            return
+        end
         ForeverXPDB = sanitize(ForeverXPDB)
         addon.db = ForeverXPDB
-        frame:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
         if not addon.db then ForeverXPDB = sanitize(ForeverXPDB); addon.db = ForeverXPDB end
         addon:CreateBar()
+        if addon.CreateClassEffects then addon:CreateClassEffects() end
         if addon.CreateMinimapButton then addon:CreateMinimapButton() end
         for _, name in ipairs({
             "PLAYER_ENTERING_WORLD", "PLAYER_XP_UPDATE", "UPDATE_EXHAUSTION", "PLAYER_LEVEL_UP",
             "PLAYER_UPDATE_RESTING", "PLAYER_MAX_LEVEL_UPDATE", "UPDATE_EXPANSION_LEVEL",
             "ENABLE_XP_GAIN", "DISABLE_XP_GAIN", "UNIT_LEVEL",
+            "PLAYER_REGEN_ENABLED", "EDIT_MODE_LAYOUTS_UPDATED",
         }) do frame:RegisterEvent(name) end
         SLASH_FOREVERXP1, SLASH_FOREVERXP2 = "/fxp", "/foreverxp"
         SlashCmdList.FOREVERXP = slashCommand

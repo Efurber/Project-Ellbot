@@ -1,10 +1,12 @@
 ## Interface: 16001, 120100, 120105
 ## Title: ForeverXP
-## Notes: A customizable XP bar for WoW Forever and Retail with RGB effects and a minimap button.
+## Notes: Class and RGB effects on Blizzard's XP bar or a custom replacement, with a minimap button.
 ## Author: ForeverXP Contributors
-## Version: 1.0.3
+## Version: 1.1.0
 ## SavedVariables: ForeverXPDB
 
 Core.lua
+Effects.lua
+NativeBar.lua
 Options.lua
 Minimap.lua

@@ -18,8 +18,32 @@ function Object:SetPoint(...) self.point = { ... } end
 function Object:GetPoint() return unpack(self.point or { "CENTER", UIParent, "CENTER", 0, 0 }) end
 function Object:ClearAllPoints() self.point = nil end
 function Object:SetAllPoints(target) self.allPoints = target or self.parent end
-function Object:SetParent(parent) self.parent = parent end
+function Object:SetParent(parent)
+    if self.parent == parent then return end
+    if self.parent then
+        for index = #self.parent.children, 1, -1 do
+            if self.parent.children[index] == self then table.remove(self.parent.children, index) end
+        end
+    end
+    self.parent = parent
+    if parent then parent.children[#parent.children + 1] = self end
+end
 function Object:GetParent() return self.parent end
+function Object:IsProtected() return self.protected or false end
+function Object:GetChildren()
+    local children = {}
+    for _, child in ipairs(self.children) do
+        if child.kind ~= "Texture" and child.kind ~= "FontString" then children[#children + 1] = child end
+    end
+    return unpack(children)
+end
+function Object:GetRegions()
+    local regions = {}
+    for _, child in ipairs(self.children) do
+        if child.kind == "Texture" or child.kind == "FontString" then regions[#regions + 1] = child end
+    end
+    return unpack(regions)
+end
 function Object:SetScale(scale) self.scale = scale end
 function Object:GetScale() return self.scale or 1 end
 function Object:GetEffectiveScale()
@@ -97,11 +121,13 @@ function Object:SetColorTexture(...) self.color = { ... } end
 function Object:SetVertexColor(...) self.vertexColor = { ... } end
 function Object:GetVertexColor() return unpack(self.vertexColor or { 1, 1, 1, 1 }) end
 function Object:SetBlendMode(value) self.blendMode = value end
+function Object:GetBlendMode() return self.blendMode or "BLEND" end
 function Object:SetDrawLayer(...) self.drawLayer = { ... } end
 function Object:SetTexCoord(...) self.texCoord = { ... } end
 function Object:SetGradient(...) self.gradient = { ... } end
 function Object:SetGradientAlpha(...) self.gradient = { ... } end
 function Object:SetRotation(value) self.rotation = value end
+function Object:GetRotation() return self.rotation or 0 end
 function Object:SetHorizTile(value) self.horizTile = value end
 function Object:SetVertTile(value) self.vertTile = value end
 function Object:SetDesaturated(value) self.desaturated = value end
@@ -186,6 +212,7 @@ function Mock.install(overrides)
         minimapWidth = 140, minimapHeight = 140, minimapScale = 1,
         minimapCenterX = 1760, minimapCenterY = 920, minimapShape = "ROUND",
         cursorX = 960, cursorY = 540, uiScale = 1,
+        createNativeBars = true, nativeWidth = 1000, nativeHeight = 14, nativeProtected = false, playerClass = "MAGE",
     }
     for key, value in pairs(overrides or {}) do state[key] = value end
     if state.maxLevel == nil then state.maxLevel = state.interfaceVersion == 16001 and 60 or 90 end
@@ -209,6 +236,15 @@ function Mock.install(overrides)
         return frame
     end
     _G.GetTime = function() return state.time end
+    _G.hooksecurefunc = function(owner, method, callback)
+        if type(owner) == "string" then owner, method, callback = _G, owner, method end
+        local original = assert(owner[method], "cannot hook missing function " .. tostring(method))
+        owner[method] = function(...)
+            local results = { original(...) }
+            callback(...)
+            return unpack(results)
+        end
+    end
     _G.UnitXP = function(unit) assert(unit == "player"); return state.xp end
     _G.UnitXPMax = function(unit) assert(unit == "player"); return state.xpMax end
     _G.GetXPExhaustion = function() return state.rested end
@@ -226,6 +262,7 @@ function Mock.install(overrides)
     _G.InCombatLockdown = function() return state.inCombat or false end
     _G.issecretvalue = function(value) return state.secretValue ~= nil and value == state.secretValue end
     _G.UnitName = function() return "TestPlayer" end
+    _G.UnitClass = function() return state.playerClass, state.playerClass, 8 end
     _G.IsShiftKeyDown = function() return state.shiftDown or false end
     _G.GetCursorPosition = function() return state.cursorX, state.cursorY end
     _G.GetMinimapShape = function() return state.minimapShape end
@@ -273,6 +310,85 @@ function Mock.install(overrides)
     _G.PlaySound = function() end
     _G.wipe = function(value) for key in pairs(value) do value[key] = nil end; return value end
     _G.strtrim = function(value) return value:match("^%s*(.-)%s*$") end
+
+    -- Model the manager's indexed XP frames separately from reputation and honor.
+    -- Native skinning must mount on these frames without changing their neighbors.
+    _G.StatusTrackingBarManager = nil
+    _G.MainStatusTrackingBarContainer, _G.SecondaryStatusTrackingBarContainer = nil, nil
+    _G.MainMenuExpBar = nil
+    _G.StatusTrackingBarInfo = { BarsEnum = { Experience = 4, Reputation = 1, Honor = 2 } }
+    function state:createNativeXPBars()
+        if self.nativeManager then return self.nativeManager end
+        local manager = CreateFrame("Frame", "StatusTrackingBarManager", UIParent)
+        manager:SetSize(self.nativeWidth, self.nativeHeight * 2)
+        manager.barContainers = {}
+        manager.UpdateBarsShown = function() end
+        manager.UpdateBarVisuals = function() end
+        local function makeBar(container, name, kind)
+            local bar = CreateFrame("Frame", name, container)
+            bar:SetSize(self.nativeWidth, self.nativeHeight)
+            bar:EnableMouse(true)
+            bar.protected = self.nativeProtected
+            bar.StatusBar = CreateFrame("StatusBar", nil, bar)
+            bar.StatusBar:SetSize(self.nativeWidth, self.nativeHeight)
+            bar.StatusBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+            bar.StatusBar:SetStatusBarColor(0.58, 0, 0.55, 1)
+            bar.StatusBar:SetMinMaxValues(0, self.xpMax)
+            bar.StatusBar:SetValue(self.xp)
+            bar.StatusBar:EnableMouse(true)
+            bar.OverlayFrame = CreateFrame("Frame", nil, bar)
+            bar.OverlayFrame:EnableMouse(true)
+            bar.OverlayFrame.Text = bar.OverlayFrame:CreateFontString(nil, "OVERLAY")
+            bar.ExhaustionTick = CreateFrame("Frame", nil, bar)
+            bar.ExhaustionTick:EnableMouse(true)
+            bar.originalTickOnEnter = function() self.nativeRestedTooltipCalls = (self.nativeRestedTooltipCalls or 0) + 1 end
+            bar.ExhaustionTick:SetScript("OnEnter", bar.originalTickOnEnter)
+            bar.ExhaustionLevelFillBar = bar:CreateTexture(nil, "ARTWORK")
+            container.bars[kind] = bar
+            return bar
+        end
+        for index = 1, 2 do
+            local name = index == 1 and "MainStatusTrackingBarContainer" or "SecondaryStatusTrackingBarContainer"
+            local container = CreateFrame("Frame", name, manager)
+            container:SetSize(self.nativeWidth, self.nativeHeight)
+            container.bars = {}
+            container.shownBarIndex = StatusTrackingBarInfo.BarsEnum.Experience
+            function container:GetShownBar() return self.bars[self.shownBarIndex] end
+            function container:ApplyPendingBarToShow()
+                local nextIndex = self.pendingBarToShowIndex
+                if not nextIndex then return end
+                if nextIndex == self.shownBarIndex then self.pendingBarToShowIndex = nil; return end
+                local oldBar = self:GetShownBar()
+                if oldBar then oldBar:Hide() end
+                local newBar = assert(self.bars[nextIndex], "pending native bar does not exist")
+                newBar:Show()
+                -- Blizzard commits this after old XP OnHide and new bar OnShow.
+                self.shownBarIndex, self.pendingBarToShowIndex = nextIndex, nil
+            end
+            container.BarFrameTexture = container:CreateTexture(nil, "OVERLAY")
+            container.BarFrameTexture:SetAlpha(0.85)
+            container.HorizontalDividersPool = { activeObjects = {} }
+            function container.HorizontalDividersPool:EnumerateActive() return pairs(self.activeObjects) end
+            for dividerIndex = 1, 2 do
+                local divider = container:CreateTexture(nil, "OVERLAY")
+                divider:SetAlpha(dividerIndex == 1 and 0.35 or 0.55)
+                container.HorizontalDividersPool.activeObjects[divider] = true
+            end
+            manager.barContainers[index] = container
+            local xp = makeBar(container, "MockExperienceBar" .. index, StatusTrackingBarInfo.BarsEnum.Experience)
+            if index == 1 then
+                self.nativeContainer, self.nativeXP, self.nativeStatusBar = container, xp, xp.StatusBar
+                self.nativeReputation = makeBar(container, "MockReputationBar", StatusTrackingBarInfo.BarsEnum.Reputation)
+            else
+                self.secondaryNativeContainer, self.secondaryNativeXP = container, xp
+                self.nativeHonor = makeBar(container, "MockHonorBar", StatusTrackingBarInfo.BarsEnum.Honor)
+                container:Hide()
+            end
+        end
+        self.nativeManager = manager
+        return manager
+    end
+    if state.createNativeBars then state:createNativeXPBars() end
 
     function state:fire(event, ...)
         local frames = {}

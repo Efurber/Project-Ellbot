@@ -37,7 +37,7 @@ local function showTooltip(button)
     GameTooltip:SetOwner(button, "ANCHOR_LEFT")
     GameTooltip:AddLine("ForeverXP", 0.35, 0.85, 1)
     GameTooltip:AddLine("Left-click to customize your XP bar.", 1, 1, 1)
-    GameTooltip:AddLine(settings.locked and "Right-click to unlock the XP bar." or "Right-click to lock the XP bar.", 0.8, 0.85, 0.95)
+    GameTooltip:AddLine(settings.locked and "Right-click to unlock the custom XP bar." or "Right-click to lock the custom XP bar.", 0.8, 0.85, 0.95)
     GameTooltip:AddLine("Drag to move this icon around the minimap.", 0.65, 0.7, 0.8)
     GameTooltip:Show()
     button.tooltipShown = true

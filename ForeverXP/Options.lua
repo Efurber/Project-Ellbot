@@ -108,29 +108,33 @@ function addon:CreateOptions()
     content:SetPoint("TOPLEFT", 28, -135)
     content:SetPoint("BOTTOMRIGHT", -28, 57)
 
+    local effects = CreateFrame("Frame", nil, content)
+    effects:SetAllPoints()
     local appearance = CreateFrame("Frame", nil, content)
     appearance:SetAllPoints()
+    appearance:Hide()
     local layout = CreateFrame("Frame", nil, content)
     layout:SetAllPoints()
     layout:Hide()
 
     local tabs = {}
-    local pages = { appearance, layout }
+    local pages = { effects, appearance, layout }
     local function showTab(index)
         for i, page in ipairs(pages) do
             page:SetShown(i == index)
             selectButton(tabs[i], i == index)
         end
     end
-    for index, name in ipairs({ "Appearance", "Layout & behavior" }) do
-        local tab = button(window, name, 216, 32)
-        tab:SetPoint("TOPLEFT", 28 + (index - 1) * 228, -88)
+    for index, name in ipairs({ "Effects", "Color & light", "Bar & behavior" }) do
+        local tab = button(window, name, 140, 32)
+        tab:SetPoint("TOPLEFT", 28 + (index - 1) * 152, -88)
         tab:SetScript("OnClick", function() showTab(index) end)
         tabs[index] = tab
     end
 
     local controls = {}
     local modes = {}
+    local displayModes = {}
     local refreshing = false
     local refresh
 
@@ -155,7 +159,7 @@ function addon:CreateOptions()
         thumb:SetSize(9, 15)
         thumb:SetVertexColor(unpack(tint or C.accent))
 
-        label(parent, title, 0, y, "GameFontHighlightSmall", tint or C.text)
+        control.title = label(parent, title, 0, y, "GameFontHighlightSmall", tint or C.text)
         local valueText = label(parent, "", 0, y, "GameFontHighlightSmall", C.muted)
         valueText:ClearAllPoints()
         valueText:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, y)
@@ -197,7 +201,7 @@ function addon:CreateOptions()
         tick:SetPoint("CENTER", square, "CENTER")
         tick:SetColorTexture(unpack(C.accent))
         control.tick = tick
-        label(control, title, 28, -4, "GameFontHighlight", C.text)
+        control.title = label(control, title, 28, -4, "GameFontHighlight", C.text)
         control:SetScript("OnEnter", function() square:SetBackdropBorderColor(unpack(C.accent)) end)
         control:SetScript("OnLeave", function() square:SetBackdropBorderColor(unpack(C.border)) end)
         control.key = key
@@ -214,56 +218,92 @@ function addon:CreateOptions()
     local function integer(value) return string.format("%d px", math.floor(value + 0.5)) end
     local function rgb(value) return tostring(math.floor(value * 255 + 0.5)) end
 
-    section(appearance, "LIGHT EFFECT", 0)
+    section(effects, "CHOOSE YOUR EFFECT", 0)
     for index, definition in ipairs({
-        { "rainbow", "Rainbow" }, { "solid", "Solid color" }, { "pulse", "Breathing" },
+        { "class", "By class" }, { "flame", "Flame" },
+        { "frost", "Frost" }, { "arcane", "Arcane" },
+        { "void", "Shadow / Void" }, { "rainbow", "Rainbow" },
+        { "solid", "Solid color" }, { "pulse", "Breathing" },
     }) do
         local mode = definition[1]
-        local control = button(appearance, definition[2], 140, 31)
-        control:SetPoint("TOPLEFT", (index - 1) * 152, -23)
+        local control = button(effects, definition[2], 216, 35)
+        control:SetPoint("TOPLEFT", ((index - 1) % 2) * 228, -26 - math.floor((index - 1) / 2) * 44)
+        control.mode = mode
         control:SetScript("OnClick", function()
             owner:SetSetting("mode", mode)
             refresh()
         end)
         modes[mode] = control
     end
-    local modeDescription = label(appearance, "", 0, -64, "GameFontHighlightSmall", C.muted)
+    local modeDescription = label(effects, "", 0, -214, "GameFontHighlight", C.text)
     modeDescription:SetWidth(444)
     modeDescription:SetWordWrap(true)
+    modeDescription:SetSpacing(5)
 
-    section(appearance, "BASE COLOR", -103)
+    section(effects, "MAKE THE LIGHT YOUR OWN", -304)
+    local effectsNote = label(effects, "Use Color & light to tune brightness, glow and animation speed. Solid color and Breathing also use your chosen RGB color.", 0, -330, "GameFontHighlightSmall", C.muted)
+    effectsNote:SetWidth(444)
+    effectsNote:SetWordWrap(true)
+    effectsNote:SetSpacing(5)
+    local sampleNote = label(effects, "The sample XP bar stays visible while these settings are open, so you can try every effect at any level.", 0, -412, "GameFontHighlightSmall", C.muted)
+    sampleNote:SetWidth(444)
+    sampleNote:SetWordWrap(true)
+    sampleNote:SetSpacing(5)
+
+    section(appearance, "BASE COLOR", 0)
     local swatch = appearance:CreateTexture(nil, "ARTWORK")
     swatch:SetSize(18, 12)
-    swatch:SetPoint("TOPRIGHT", 0, -103)
-    slider(appearance, "Red", "color", -128, 0, 1, 1 / 255, rgb, { 1, 0.42, 0.45, 1 }, "r")
-    slider(appearance, "Green", "color", -171, 0, 1, 1 / 255, rgb, { 0.41, 0.91, 0.64, 1 }, "g")
-    slider(appearance, "Blue", "color", -214, 0, 1, 1 / 255, rgb, { 0.42, 0.67, 1, 1 }, "b")
+    swatch:SetPoint("TOPRIGHT", 0, 0)
+    local colorNote = label(appearance, "", 0, -25, "GameFontHighlightSmall", C.muted)
+    colorNote:SetWidth(444)
+    colorNote:SetWordWrap(true)
+    slider(appearance, "Red", "color", -73, 0, 1, 1 / 255, rgb, { 1, 0.42, 0.45, 1 }, "r")
+    slider(appearance, "Green", "color", -118, 0, 1, 1 / 255, rgb, { 0.41, 0.91, 0.64, 1 }, "g")
+    slider(appearance, "Blue", "color", -163, 0, 1, 1 / 255, rgb, { 0.42, 0.67, 1, 1 }, "b")
 
-    section(appearance, "FINISH", -269)
-    slider(appearance, "Brightness", "brightness", -295, 0.15, 1, 0.05, percent)
-    slider(appearance, "Glow intensity", "glow", -338, 0, 1, 0.05, percent)
-    slider(appearance, "Animation speed", "speed", -381, 0.05, 2, 0.05, function(value)
+    section(appearance, "FINISH", -218)
+    slider(appearance, "Brightness", "brightness", -244, 0.15, 1, 0.05, percent)
+    slider(appearance, "Glow intensity", "glow", -289, 0, 1, 0.05, percent)
+    slider(appearance, "Animation speed", "speed", -334, 0.05, 2, 0.05, function(value)
         return string.format("%.2fx", value)
     end)
-    checkbox(appearance, "Reduce motion (keep colors still)", "reducedMotion", -442)
+    checkbox(appearance, "Reduce motion (keep colors still)", "reducedMotion", -392)
+    local motionNote = label(appearance, "Reduced motion keeps your effect's colors without moving lights or pulsing.", 0, -438, "GameFontHighlightSmall", C.muted)
+    motionNote:SetWidth(444)
+    motionNote:SetWordWrap(true)
+    motionNote:SetSpacing(5)
 
-    section(layout, "BAR DIMENSIONS", 0)
-    slider(layout, "Width", "width", -29, 240, 1200, 10, integer)
-    slider(layout, "Height", "height", -80, 12, 48, 1, integer)
-    slider(layout, "Scale", "scale", -131, 0.5, 2, 0.05, percent)
+    section(layout, "APPLY EFFECTS TO", 0)
+    for index, definition in ipairs({ { "native", "Blizzard bar" }, { "custom", "Custom replacement" } }) do
+        local displayMode = definition[1]
+        local control = button(layout, definition[2], 216, 32)
+        control:SetPoint("TOPLEFT", (index - 1) * 228, -25)
+        control.displayMode = displayMode
+        control:SetScript("OnClick", function()
+            owner:SetSetting("displayMode", displayMode)
+            refresh()
+        end)
+        displayModes[displayMode] = control
+    end
+    local placementNote = label(layout, "", 0, -72, "GameFontHighlightSmall", C.muted)
+    placementNote:SetWidth(444)
+    placementNote:SetWordWrap(true)
+    placementNote:SetSpacing(4)
+    local nativeStatus = label(layout, "", 0, -112, "GameFontHighlightSmall", C.accent)
+    nativeStatus:SetWidth(444)
+    nativeStatus:SetWordWrap(true)
 
-    section(layout, "BEHAVIOR", -195)
-    checkbox(layout, "Show XP and level text", "showText", -224)
-    checkbox(layout, "Show rested XP", "showRested", -260)
-    checkbox(layout, "Lock bar position", "locked", -296)
-    checkbox(layout, "Hide at maximum level", "hideAtMax", -332)
-    checkbox(layout, "Show minimap button", "showMinimap", -368)
-    local dragNote = label(layout, "Unlock the bar, then drag it to your preferred position.\nYour position and appearance are saved automatically.", 0, -410, "GameFontHighlightSmall", C.muted)
-    dragNote:SetWidth(444)
-    dragNote:SetSpacing(5)
-    local maxNote = label(layout, "The sample preview remains visible here, including at maximum level.", 0, -461, "GameFontHighlightSmall", C.muted)
-    maxNote:SetWidth(444)
-    maxNote:SetWordWrap(true)
+    section(layout, "CUSTOM BAR DIMENSIONS", -148)
+    slider(layout, "Width", "width", -174, 240, 1200, 10, integer).customOnly = true
+    slider(layout, "Height", "height", -216, 12, 48, 1, integer).customOnly = true
+    slider(layout, "Scale", "scale", -258, 0.5, 2, 0.05, percent).customOnly = true
+
+    section(layout, "BEHAVIOR", -310)
+    checkbox(layout, "Show XP and level text", "showText", -335)
+    checkbox(layout, "Show rested XP", "showRested", -365)
+    checkbox(layout, "Lock custom bar position", "locked", -395).customOnly = true
+    checkbox(layout, "Hide custom bar at maximum level", "hideAtMax", -425).customOnly = true
+    checkbox(layout, "Show minimap button", "showMinimap", -455)
 
     local footerLine = window:CreateTexture(nil, "ARTWORK")
     footerLine:SetPoint("BOTTOMLEFT", 28, 49)
@@ -282,6 +322,8 @@ function addon:CreateOptions()
         if refreshing then return end
         refreshing = true
         local settings = owner:GetSettings()
+        local customBar = settings.displayMode == "custom"
+        local customColor = settings.mode == "solid" or settings.mode == "pulse"
         for _, control in ipairs(controls) do
             if control.isCheckbox then
                 control:SetChecked(settings[control.key])
@@ -291,18 +333,43 @@ function addon:CreateOptions()
                 control:SetValue(value)
                 control.valueText:SetText(control.format(value))
             end
+            local enabled = (not control.customOnly or customBar) and (not control.colorKey or customColor)
+            control:SetEnabled(enabled)
+            control:SetAlpha(enabled and 1 or 0.35)
+            if not control.isCheckbox then
+                control:EnableMouseWheel(enabled)
+                control.title:SetAlpha(enabled and 1 or 0.35)
+                control.valueText:SetAlpha(enabled and 1 or 0.35)
+            end
         end
         for mode, control in pairs(modes) do
             selectButton(control, settings.mode == mode)
         end
-        swatch:SetColorTexture(settings.color.r, settings.color.g, settings.color.b, 1)
-        if settings.mode == "rainbow" then
-            modeDescription:SetText("A flowing rainbow across your XP. Base color is used by the other effects.")
-        elseif settings.mode == "pulse" then
-            modeDescription:SetText("A soft breathing light in your chosen base color.")
-        else
-            modeDescription:SetText("Your chosen base color with a soft glow at the end of your XP.")
+        for displayMode, control in pairs(displayModes) do
+            selectButton(control, (settings.displayMode or "native") == displayMode)
         end
+        swatch:SetColorTexture(settings.color.r, settings.color.g, settings.color.b, 1)
+        local descriptions = {
+            class = "Your class chooses the magic. The effect follows your character automatically.",
+            flame = "Warm flames and glowing embers dance along your XP bar.",
+            frost = "Icy blues and bright frost shimmer across your progress.",
+            arcane = "Violet arcane light and magical sparks flow along the bar.",
+            void = "Deep shadow, heavy violet glow and restless void energy.",
+            rainbow = "A flowing rainbow brings a full spectrum of color to your XP.",
+            pulse = "A soft breathing light in your chosen RGB color.",
+            solid = "Your chosen RGB color with a soft glow at the end of your XP.",
+        }
+        modeDescription:SetText(descriptions[settings.mode] or descriptions.rainbow)
+        if customColor then
+            colorNote:SetText("Choose the RGB color for Solid color and Breathing.")
+        else
+            colorNote:SetText("This effect uses its own colors. Choose Solid color or Breathing to use the RGB sliders.")
+        end
+        swatch:SetAlpha(customColor and 1 or 0.35)
+        placementNote:SetText(customBar
+            and "Replaces Blizzard's XP bar. Unlock the custom bar below, then drag it to your preferred position."
+            or "Use Blizzard's Edit Mode for position and size. The game controls when its XP bar is visible.")
+        nativeStatus:SetText(type(owner.nativeStatus) == "string" and owner.nativeStatus or "")
         refreshing = false
     end
     window.Refresh = refresh
