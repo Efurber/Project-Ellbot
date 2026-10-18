@@ -1,0 +1,14 @@
+## Interface: 16001, 120100, 120105
+## Title: LumenUI
+## Notes: Minimal glass UI, an invisible hover dock, and a customizable HUD layout.
+## Author: LumenUI Contributors
+## Version: 1.0.0
+## SavedVariables: LumenUIDB
+
+Core.lua
+Style.lua
+Actions.lua
+Dock.lua
+Layout.lua
+Skins.lua
+Editor.lua

@@ -14,10 +14,27 @@ function Object:SetWidth(value) self:SetSize(value, self:GetHeight()) end
 function Object:SetHeight(value) self:SetSize(self:GetWidth(), value) end
 function Object:GetWidth() return self.width or 0 end
 function Object:GetHeight() return self.height or 0 end
-function Object:SetPoint(...) self.point = { ... } end
-function Object:GetPoint() return unpack(self.point or { "CENTER", UIParent, "CENTER", 0, 0 }) end
-function Object:ClearAllPoints() self.point = nil end
-function Object:SetAllPoints(target) self.allPoints = target or self.parent end
+function Object:SetPoint(point, relative, relativePoint, x, y)
+    if type(relative) == "number" then x, y, relative, relativePoint = relative, relativePoint, self.parent, point end
+    if type(relativePoint) == "number" then x, y, relativePoint = relativePoint, x, point end
+    relative, relativePoint = relative or self.parent, relativePoint or point
+    self.centerX, self.centerY = nil, nil
+    local anchor = { point, relative, relativePoint, x or 0, y or 0 }
+    self.points = self.points or {}
+    for index, previous in ipairs(self.points) do
+        if previous[1] == point then self.points[index] = anchor; return end
+    end
+    self.points[#self.points + 1] = anchor
+end
+function Object:GetPoint(index) return unpack((self.points or {})[index or 1] or {}) end
+function Object:GetNumPoints() return #(self.points or {}) end
+function Object:ClearAllPoints() self.points = {} end
+function Object:SetAllPoints(target)
+    self.allPoints = target or self.parent
+    self:ClearAllPoints()
+    self:SetPoint("TOPLEFT", self.allPoints, "TOPLEFT")
+    self:SetPoint("BOTTOMRIGHT", self.allPoints, "BOTTOMRIGHT")
+end
 function Object:SetParent(parent)
     if self.parent == parent then return end
     if self.parent then
@@ -51,8 +68,24 @@ function Object:GetEffectiveScale()
 end
 function Object:GetCenter()
     if self.centerX then return self.centerX, self.centerY end
-    return self:GetWidth() / 2, self:GetHeight() / 2
+    local point, relative, relativePoint, x, y = self:GetPoint()
+    local centerX, centerY = 0, 0
+    if relative and relative ~= self then centerX, centerY = relative:GetCenter() end
+    local conversion = relative and relative:GetEffectiveScale() / self:GetEffectiveScale() or 1
+    local anchors = {
+        TOPLEFT = { -0.5, 0.5 }, TOP = { 0, 0.5 }, TOPRIGHT = { 0.5, 0.5 },
+        LEFT = { -0.5, 0 }, CENTER = { 0, 0 }, RIGHT = { 0.5, 0 },
+        BOTTOMLEFT = { -0.5, -0.5 }, BOTTOM = { 0, -0.5 }, BOTTOMRIGHT = { 0.5, -0.5 },
+    }
+    local own, target = anchors[point] or anchors.CENTER, anchors[relativePoint] or anchors.CENTER
+    return (centerX + target[1] * (relative and relative:GetWidth() or 0)) * conversion - own[1] * self:GetWidth() + (x or 0),
+        (centerY + target[2] * (relative and relative:GetHeight() or 0)) * conversion - own[2] * self:GetHeight() + (y or 0)
 end
+function Object:GetLeft() local x = self:GetCenter(); return x - self:GetWidth() / 2 end
+function Object:GetRight() local x = self:GetCenter(); return x + self:GetWidth() / 2 end
+function Object:GetTop() local _, y = self:GetCenter(); return y + self:GetHeight() / 2 end
+function Object:GetBottom() local _, y = self:GetCenter(); return y - self:GetHeight() / 2 end
+function Object:IsMouseOver() return self.state.mouseOver[self] or false end
 function Object:SetAlpha(alpha) self.alpha = alpha end
 function Object:GetAlpha() return self.alpha or 1 end
 function Object:Show()
@@ -106,17 +139,23 @@ function Object:SetText(text) self.text = tostring(text or "") end
 function Object:GetText() return self.text or "" end
 function Object:SetFormattedText(format, ...) self:SetText(string.format(format, ...)) end
 function Object:SetTextColor(...) self.textColor = { ... } end
+function Object:GetTextColor() return unpack(self.textColor or { 1, 1, 1, 1 }) end
 function Object:SetFont(...) self.font = { ... } end
+function Object:GetFont() return unpack(self.font or { "Fonts\\FRIZQT__.TTF", 12, "" }) end
 function Object:SetFontObject(font) self.fontObject = font end
 function Object:SetJustifyH(value) self.justifyH = value end
 function Object:SetJustifyV(value) self.justifyV = value end
 function Object:SetShadowColor(...) self.shadowColor = { ... } end
+function Object:GetShadowColor() return unpack(self.shadowColor or { 0, 0, 0, 1 }) end
 function Object:SetShadowOffset(...) self.shadowOffset = { ... } end
+function Object:GetShadowOffset() return unpack(self.shadowOffset or { 0, 0 }) end
 function Object:SetWordWrap(value) self.wordWrap = value end
 function Object:SetSpacing(value) self.spacing = value end
 function Object:GetStringWidth() return #self:GetText() * 7 end
-function Object:SetTexture(texture) self.texture = texture end
+function Object:SetTexture(texture) self.texture, self.atlas = texture, nil end
 function Object:GetTexture() return self.texture end
+function Object:SetAtlas(atlas) self.atlas = atlas end
+function Object:GetAtlas() return self.atlas end
 function Object:SetColorTexture(...) self.color = { ... } end
 function Object:SetVertexColor(...) self.vertexColor = { ... } end
 function Object:GetVertexColor() return unpack(self.vertexColor or { 1, 1, 1, 1 }) end
@@ -124,6 +163,7 @@ function Object:SetBlendMode(value) self.blendMode = value end
 function Object:GetBlendMode() return self.blendMode or "BLEND" end
 function Object:SetDrawLayer(...) self.drawLayer = { ... } end
 function Object:SetTexCoord(...) self.texCoord = { ... } end
+function Object:GetTexCoord() return unpack(self.texCoord or { 0, 1, 0, 1 }) end
 function Object:SetGradient(...) self.gradient = { ... } end
 function Object:SetGradientAlpha(...) self.gradient = { ... } end
 function Object:SetRotation(value) self.rotation = value end
@@ -206,36 +246,48 @@ end
 
 function Mock.install(overrides)
     local state = {
-        objects = {}, time = 0, xp = 250, xpMax = 1000, rested = 350,
-        playerLevel = 20, messages = {}, openedSettings = nil,
-        interfaceVersion = 16001,
-        minimapWidth = 140, minimapHeight = 140, minimapScale = 1,
-        minimapCenterX = 1760, minimapCenterY = 920, minimapShape = "ROUND",
-        cursorX = 960, cursorY = 540, uiScale = 1,
-        createNativeBars = true, nativeWidth = 1000, nativeHeight = 14, nativeProtected = false, playerClass = "MAGE",
+        objects = {}, time = 0, messages = {}, calls = {}, timers = {},
+        interfaceVersion = 16001, uiScale = 1, inCombat = false,
+        cursorX = 960, cursorY = 540, mouseOver = {}, createNativeFrames = true,
+        playerClass = "MAGE", playerName = "TestPlayer", frameRate = 120,
     }
     for key, value in pairs(overrides or {}) do state[key] = value end
-    if state.maxLevel == nil then state.maxLevel = state.interfaceVersion == 16001 and 60 or 90 end
-
     _G.WOW_PROJECT_MAINLINE, _G.WOW_PROJECT_CAMELOT = 1, 18
     _G.WOW_PROJECT_ID = state.interfaceVersion == 16001 and WOW_PROJECT_CAMELOT or WOW_PROJECT_MAINLINE
-    _G.GameRulesUtil = {
-        IsPlayerAtEffectiveMaxLevel = function() return state.playerLevel >= state.maxLevel end,
-    }
-
     _G.UIParent = newObject(state, "Frame", "UIParent")
     UIParent:SetSize(1920, 1080)
     UIParent:SetScale(state.uiScale)
-    _G.Minimap = newObject(state, "Frame", "Minimap", UIParent)
-    Minimap:SetSize(state.minimapWidth, state.minimapHeight)
-    Minimap:SetScale(state.minimapScale)
-    Minimap.centerX, Minimap.centerY = state.minimapCenterX, state.minimapCenterY
+    UIParent.centerX, UIParent.centerY = 960, 540
     _G.CreateFrame = function(kind, name, parent, template)
         local frame = newObject(state, kind, name, parent or UIParent)
         frame.template = template
         return frame
     end
     _G.GetTime = function() return state.time end
+    _G.GetCursorPosition = function() return state.cursorX, state.cursorY end
+    _G.MouseIsOver = function(frame) return state.mouseOver[frame] or false end
+    _G.InCombatLockdown = function() return state.inCombat end
+    _G.GetBuildInfo = function()
+        local interface = state.interfaceVersion
+        local version = string.format("%d.%d.%d", math.floor(interface / 10000), math.floor(interface / 100) % 100, interface % 100)
+        return version, "00000", "Oct 18 2026", interface
+    end
+    _G.UnitClass = function() return state.playerClass, state.playerClass, 8 end
+    _G.UnitName = function() return state.playerName end
+    _G.GetLocale = function() return "enUS" end
+    _G.GetGameTime = function() return 13, 37 end
+    _G.GetFramerate = function() return state.frameRate end
+    _G.GetNetStats = function() return 0, 0, 32, 48 end
+    _G.GetCVar = function() return "0" end
+    _G.IsShiftKeyDown = function() return state.shiftDown or false end
+    _G.SlashCmdList, _G.UISpecialFrames = {}, {}
+    _G.DEFAULT_CHAT_FRAME = { AddMessage = function(_, value) state.messages[#state.messages + 1] = value end }
+    _G.print = function(...) state.messages[#state.messages + 1] = table.concat({ ... }, " ") end
+    _G.CreateColor = function(r, g, b, a)
+        return { r = r, g = g, b = b, a = a or 1,
+            GetRGBA = function(self) return self.r, self.g, self.b, self.a end,
+            GetRGB = function(self) return self.r, self.g, self.b end }
+    end
     _G.hooksecurefunc = function(owner, method, callback)
         if type(owner) == "string" then owner, method, callback = _G, owner, method end
         local original = assert(owner[method], "cannot hook missing function " .. tostring(method))
@@ -245,164 +297,133 @@ function Mock.install(overrides)
             return unpack(results)
         end
     end
-    _G.UnitXP = function(unit) assert(unit == "player"); return state.xp end
-    _G.UnitXPMax = function(unit) assert(unit == "player"); return state.xpMax end
-    _G.GetXPExhaustion = function() return state.rested end
-    _G.UnitLevel = function(unit) assert(unit == "player"); return state.playerLevel end
-    _G.GetMaxPlayerLevel = function() return state.maxLevel end
-    _G.GetMaxLevelForPlayerExpansion = function() return state.maxLevel end
-    _G.GetAccountExpansionLevel = function() return 11 end
-    _G.GetExpansionLevel = function() return 11 end
-    _G.GetBuildInfo = function()
-        local interface = state.interfaceVersion
-        local version = string.format("%d.%d.%d", math.floor(interface / 10000), math.floor(interface / 100) % 100, interface % 100)
-        return version, "00000", "Oct 18 2026", interface
+    _G.C_Timer = {}
+    local function schedule(delay, callback, interval)
+        local timer = { at = state.time + delay, callback = callback, interval = interval }
+        function timer:Cancel() self.canceled = true end
+        state.timers[#state.timers + 1] = timer
+        return timer
     end
-    _G.IsXPUserDisabled = function() return state.xpDisabled or false end
-    _G.InCombatLockdown = function() return state.inCombat or false end
-    _G.issecretvalue = function(value) return state.secretValue ~= nil and value == state.secretValue end
-    _G.UnitName = function() return "TestPlayer" end
-    _G.UnitClass = function() return state.playerClass, state.playerClass, 8 end
-    _G.IsShiftKeyDown = function() return state.shiftDown or false end
-    _G.GetCursorPosition = function() return state.cursorX, state.cursorY end
-    _G.GetMinimapShape = function() return state.minimapShape end
-    _G.GetLocale = function() return "enUS" end
-    _G.SlashCmdList = {}
-    _G.UISpecialFrames = {}
-    _G.DEFAULT_CHAT_FRAME = { AddMessage = function(_, value) state.messages[#state.messages + 1] = value end }
-    _G.print = function(...) state.messages[#state.messages + 1] = table.concat({ ... }, " ") end
-    _G.CreateColor = function(r, g, b, a)
-        return { r = r, g = g, b = b, a = a or 1,
-            GetRGBA = function(self) return self.r, self.g, self.b, self.a end,
-            GetRGB = function(self) return self.r, self.g, self.b end }
-    end
-    _G.C_Timer = {
-        After = function(_, callback) callback() end,
-        NewTicker = function(_, callback) return { Cancel = function() end, callback = callback } end,
-    }
-    _G.Settings = {
-        RegisterCanvasLayoutCategory = function(panel, name)
-            return { panel = panel, name = name, GetID = function() return name end }
-        end,
-        RegisterAddOnCategory = function(category) state.settingsCategory = category end,
-        OpenToCategory = function(category) state.openedSettings = category end,
-    }
-    _G.InterfaceOptions_AddCategory = function(panel) state.legacyPanel = panel end
-    _G.InterfaceOptionsFrame_OpenToCategory = function(panel) state.openedSettings = panel end
-    _G.ColorPickerFrame = newObject(state, "Frame", "ColorPickerFrame", UIParent)
-    function ColorPickerFrame:SetupColorPickerAndShow(info)
-        self.info, self.rgb = info, { info.r, info.g, info.b }
-        self:Show()
-    end
-    function ColorPickerFrame:GetColorRGB() return unpack(self.rgb or { 1, 1, 1 }) end
-    _G.GameTooltip = newObject(state, "Frame", "GameTooltip", UIParent)
-    function GameTooltip:SetOwner(owner, anchor) self.owner, self.anchor = owner, anchor end
+    function C_Timer.After(delay, callback) schedule(delay, callback) end
+    function C_Timer.NewTimer(delay, callback) return schedule(delay, callback) end
+    function C_Timer.NewTicker(interval, callback) return schedule(interval, callback, interval) end
+    _G.GameTooltip = CreateFrame("Frame", "GameTooltip", UIParent)
+    function GameTooltip:SetOwner(owner, anchor) self.owner, self.anchor, self.lines = owner, anchor, {} end
     function GameTooltip:AddLine(line) self.lines = self.lines or {}; self.lines[#self.lines + 1] = line end
     function GameTooltip:AddDoubleLine(left, right) self:AddLine(left .. " " .. right) end
     function GameTooltip:ClearLines() self.lines = {} end
-    _G.GameFontNormal = "GameFontNormal"
-    _G.GameFontNormalSmall = "GameFontNormalSmall"
-    _G.GameFontHighlight = "GameFontHighlight"
-    _G.GameFontHighlightSmall = "GameFontHighlightSmall"
     _G.STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
-    _G.BACKDROP_TOOLTIP_16_16_5555 = {}
+    for _, name in ipairs({ "GameFontNormal", "GameFontNormalSmall", "GameFontHighlight", "GameFontHighlightSmall", "GameFontNormalLarge" }) do _G[name] = name end
     _G.SOUNDKIT = { IG_MAINMENU_OPTION_CHECKBOX_ON = 1 }
     _G.PlaySound = function() end
     _G.wipe = function(value) for key in pairs(value) do value[key] = nil end; return value end
     _G.strtrim = function(value) return value:match("^%s*(.-)%s*$") end
+    _G.Settings = {
+        OpenToCategory = function(category) state.calls[#state.calls + 1] = { "Settings.OpenToCategory", category } end,
+    }
+    _G.C_AddOns = {
+        LoadAddOn = function(name) state.calls[#state.calls + 1] = { "C_AddOns.LoadAddOn", name }; return true end,
+        IsAddOnLoaded = function() return true end,
+    }
+    _G.UIParentLoadAddOn = function(name) return C_AddOns.LoadAddOn(name) end
+    _G.C_SpellBook = nil
+    _G.C_PlayerInfo = nil
+    _G.PlayerSpellsUtil = nil
 
-    -- Model the manager's indexed XP frames separately from reputation and honor.
-    -- Native skinning must mount on these frames without changing their neighbors.
-    _G.StatusTrackingBarManager = nil
-    _G.MainStatusTrackingBarContainer, _G.SecondaryStatusTrackingBarContainer = nil, nil
-    _G.MainMenuExpBar = nil
-    _G.StatusTrackingBarInfo = { BarsEnum = { Experience = 4, Reputation = 1, Honor = 2 } }
-    function state:createNativeXPBars()
-        if self.nativeManager then return self.nativeManager end
-        local manager = CreateFrame("Frame", "StatusTrackingBarManager", UIParent)
-        manager:SetSize(self.nativeWidth, self.nativeHeight * 2)
-        manager.barContainers = {}
-        manager.UpdateBarsShown = function() end
-        manager.UpdateBarVisuals = function() end
-        local function makeBar(container, name, kind)
-            local bar = CreateFrame("Frame", name, container)
-            bar:SetSize(self.nativeWidth, self.nativeHeight)
-            bar:EnableMouse(true)
-            bar.protected = self.nativeProtected
-            bar.StatusBar = CreateFrame("StatusBar", nil, bar)
-            bar.StatusBar:SetSize(self.nativeWidth, self.nativeHeight)
-            bar.StatusBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-            bar.StatusBar:SetStatusBarColor(0.58, 0, 0.55, 1)
-            bar.StatusBar:SetMinMaxValues(0, self.xpMax)
-            bar.StatusBar:SetValue(self.xp)
-            bar.StatusBar:EnableMouse(true)
-            bar.OverlayFrame = CreateFrame("Frame", nil, bar)
-            bar.OverlayFrame:EnableMouse(true)
-            bar.OverlayFrame.Text = bar.OverlayFrame:CreateFontString(nil, "OVERLAY")
-            bar.ExhaustionTick = CreateFrame("Frame", nil, bar)
-            bar.ExhaustionTick:EnableMouse(true)
-            bar.originalTickOnEnter = function() self.nativeRestedTooltipCalls = (self.nativeRestedTooltipCalls or 0) + 1 end
-            bar.ExhaustionTick:SetScript("OnEnter", bar.originalTickOnEnter)
-            bar.ExhaustionLevelFillBar = bar:CreateTexture(nil, "ARTWORK")
-            container.bars[kind] = bar
-            return bar
+    local nativeNames = {
+        "PlayerFrame", "TargetFrame", "FocusFrame", "MinimapCluster", "Minimap", "ChatFrame1",
+        "MainActionBar", "MainMenuBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarRight", "MultiBarLeft",
+        "MultiBar5", "MultiBar6", "MultiBar7", "PlayerCastingBarFrame", "CastingBarFrame", "BuffFrame", "ObjectiveTrackerFrame",
+        "MicroMenu", "BagsBar", "CharacterFrame", "SpellBookFrame", "PlayerSpellsFrame", "FriendsFrame", "PVEFrame",
+        "QuestLogFrame", "WorldMapFrame", "AchievementFrame", "CollectionsJournal", "EncounterJournal", "GameMenuFrame",
+        "GuildFrame", "CalendarFrame", "HelpFrame", "MerchantFrame", "GossipFrame", "QuestFrame", "BankFrame", "MailFrame",
+    }
+    for _, name in ipairs(nativeNames) do _G[name] = nil end
+    for index = 1, 12 do _G["ActionButton" .. index] = nil end
+    _G.PlayerFrameHealthBar, _G.PlayerFrameManaBar, _G.TargetFrameHealthBar = nil, nil, nil
+
+    function state:createNativeUI()
+        if self.nativeCreated then return end
+        self.nativeCreated = true
+        for index, name in ipairs(nativeNames) do
+            local frame = CreateFrame("Frame", name, UIParent)
+            frame:SetSize(260, 100)
+            frame:SetPoint("CENTER", UIParent, "CENTER", -500 + index * 17, 200 - index * 4)
+            frame.centerX, frame.centerY = 960 - 500 + index * 17, 540 + 200 - index * 4
+            frame:EnableMouse(true)
+            frame:SetAlpha(0.9)
+            self[name] = frame
         end
-        for index = 1, 2 do
-            local name = index == 1 and "MainStatusTrackingBarContainer" or "SecondaryStatusTrackingBarContainer"
-            local container = CreateFrame("Frame", name, manager)
-            container:SetSize(self.nativeWidth, self.nativeHeight)
-            container.bars = {}
-            container.shownBarIndex = StatusTrackingBarInfo.BarsEnum.Experience
-            function container:GetShownBar() return self.bars[self.shownBarIndex] end
-            function container:ApplyPendingBarToShow()
-                local nextIndex = self.pendingBarToShowIndex
-                if not nextIndex then return end
-                if nextIndex == self.shownBarIndex then self.pendingBarToShowIndex = nil; return end
-                local oldBar = self:GetShownBar()
-                if oldBar then oldBar:Hide() end
-                local newBar = assert(self.bars[nextIndex], "pending native bar does not exist")
-                newBar:Show()
-                -- Blizzard commits this after old XP OnHide and new bar OnShow.
-                self.shownBarIndex, self.pendingBarToShowIndex = nextIndex, nil
-            end
-            container.BarFrameTexture = container:CreateTexture(nil, "OVERLAY")
-            container.BarFrameTexture:SetAlpha(0.85)
-            container.HorizontalDividersPool = { activeObjects = {} }
-            function container.HorizontalDividersPool:EnumerateActive() return pairs(self.activeObjects) end
-            for dividerIndex = 1, 2 do
-                local divider = container:CreateTexture(nil, "OVERLAY")
-                divider:SetAlpha(dividerIndex == 1 and 0.35 or 0.55)
-                container.HorizontalDividersPool.activeObjects[divider] = true
-            end
-            manager.barContainers[index] = container
-            local xp = makeBar(container, "MockExperienceBar" .. index, StatusTrackingBarInfo.BarsEnum.Experience)
-            if index == 1 then
-                self.nativeContainer, self.nativeXP, self.nativeStatusBar = container, xp, xp.StatusBar
-                self.nativeReputation = makeBar(container, "MockReputationBar", StatusTrackingBarInfo.BarsEnum.Reputation)
-            else
-                self.secondaryNativeContainer, self.secondaryNativeXP = container, xp
-                self.nativeHonor = makeBar(container, "MockHonorBar", StatusTrackingBarInfo.BarsEnum.Honor)
-                container:Hide()
-            end
+        PlayerFrame.protected, TargetFrame.protected, MainActionBar.protected = true, true, true
+        TargetFrame:Hide(); FocusFrame:Hide(); PlayerCastingBarFrame:Hide(); CastingBarFrame:Hide()
+        MinimapCluster:SetSize(180, 180)
+        MinimapCluster.centerX, MinimapCluster.centerY = 1780, 920
+        Minimap:SetParent(MinimapCluster); Minimap:SetSize(160, 160)
+        ChatFrame1:SetSize(400, 180); ObjectiveTrackerFrame:SetSize(250, 450)
+        for _, name in ipairs({ "CharacterFrame", "SpellBookFrame", "PlayerSpellsFrame", "FriendsFrame", "PVEFrame", "QuestLogFrame", "WorldMapFrame", "AchievementFrame", "CollectionsJournal", "EncounterJournal", "GameMenuFrame", "GuildFrame", "CalendarFrame", "HelpFrame", "MerchantFrame", "GossipFrame", "QuestFrame", "BankFrame", "MailFrame" }) do
+            local frame = _G[name]
+            frame.Bg = frame:CreateTexture(nil, "BACKGROUND"); frame.Bg:SetTexture("OriginalWindowBackground"); frame.Bg:SetAlpha(0.7)
+            frame.NineSlice = CreateFrame("Frame", nil, frame); frame.NineSlice:SetAlpha(0.8)
+            frame.TitleText = frame:CreateFontString(nil, "OVERLAY"); frame.TitleText:SetText(name); frame.TitleText:SetTextColor(0.9, 0.8, 0.6, 1)
+            frame:Hide()
         end
-        self.nativeManager = manager
-        return manager
+        for index = 1, 12 do
+            local button = CreateFrame("CheckButton", "ActionButton" .. index, MainActionBar)
+            button:SetSize(36, 36)
+            button.icon = button:CreateTexture(nil, "ARTWORK"); button.icon:SetTexture("OriginalActionIcon"); button.icon:SetTexCoord(0, 1, 0, 1)
+            button.NormalTexture = button:CreateTexture(nil, "OVERLAY"); button.NormalTexture:SetAlpha(0.75)
+            button.SlotArt = button:CreateTexture(nil, "BACKGROUND"); button.SlotArt:SetAlpha(0.65)
+            button.SlotBackground = button:CreateTexture(nil, "BACKGROUND"); button.SlotBackground:SetAlpha(0.55)
+            button.HotKey = button:CreateFontString(nil, "OVERLAY"); button.HotKey:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
+            button.Count = button:CreateFontString(nil, "OVERLAY")
+            local callback = function() self.actionClicks = (self.actionClicks or 0) + 1 end
+            button:SetScript("OnClick", callback); button.originalOnClick = callback
+        end
+        MainActionBar.BorderArt = MainActionBar:CreateTexture(nil, "OVERLAY")
+        MainActionBar.EndCaps = { LeftEndCap = { Texture = MainActionBar:CreateTexture(nil, "OVERLAY") }, RightEndCap = { Texture = MainActionBar:CreateTexture(nil, "OVERLAY") } }
+        local function unitVisuals(frame, key)
+            frame[key .. "FrameContainer"] = { FrameTexture = frame:CreateTexture(nil, "OVERLAY") }
+            local health = CreateFrame("StatusBar", nil, frame); health:SetStatusBarTexture("OriginalHealthTexture"); health:SetStatusBarColor(0.2, 0.7, 0.3, 1)
+            local mana = CreateFrame("StatusBar", nil, frame); mana:SetStatusBarTexture("OriginalManaTexture")
+            frame[key .. "FrameContent"] = { [key .. "FrameContentMain"] = { HealthBarsContainer = { HealthBar = health }, ManaBarArea = { ManaBar = mana }, ManaBar = mana } }
+            return health, mana
+        end
+        _G.PlayerFrameHealthBar, _G.PlayerFrameManaBar = unitVisuals(PlayerFrame, "Player")
+        _G.TargetFrameHealthBar = unitVisuals(TargetFrame, "Target")
     end
-    if state.createNativeBars then state:createNativeXPBars() end
+    if state.createNativeFrames then state:createNativeUI() end
+
+    local routes = {
+        ToggleCharacter = "CharacterFrame", ToggleSpellBook = "SpellBookFrame", ToggleAllBags = "BagsBar",
+        ToggleWorldMap = "WorldMapFrame", ToggleFriendsFrame = "FriendsFrame", ToggleGuildFrame = "GuildFrame",
+        ToggleAchievementFrame = "AchievementFrame", ToggleCollectionsJournal = "CollectionsJournal",
+        ToggleEncounterJournal = "EncounterJournal", ToggleTalentFrame = "PlayerSpellsFrame",
+        PVEFrame_ToggleFrame = "PVEFrame", ToggleGameMenu = "GameMenuFrame", ToggleCalendar = "CalendarFrame",
+        ToggleQuestLog = "QuestLogFrame", ToggleHelpFrame = "HelpFrame",
+    }
+    for method, frameName in pairs(routes) do
+        _G[method] = function(...)
+            state.calls[#state.calls + 1] = { method, ... }
+            local frame = _G[frameName]
+            if frame then frame:SetShown(not frame:IsShown()) end
+        end
+    end
 
     function state:fire(event, ...)
         local frames = {}
-        for _, frame in ipairs(self.objects) do
-            if frame.events[event] then frames[#frames + 1] = frame end
-        end
-        for _, frame in ipairs(frames) do
-            if frame.scripts.OnEvent then frame.scripts.OnEvent(frame, event, ...) end
-        end
+        for _, frame in ipairs(self.objects) do if frame.events[event] then frames[#frames + 1] = frame end end
+        for _, frame in ipairs(frames) do if frame.scripts.OnEvent then frame.scripts.OnEvent(frame, event, ...) end end
     end
     function state:tick(elapsed)
         self.time = self.time + elapsed
-        for _, frame in ipairs(self.objects) do
-            if frame:IsVisible() and frame.scripts.OnUpdate then frame.scripts.OnUpdate(frame, elapsed) end
+        local frames = {}
+        for _, frame in ipairs(self.objects) do if frame:IsVisible() and frame.scripts.OnUpdate then frames[#frames + 1] = frame end end
+        for _, frame in ipairs(frames) do if frame.scripts.OnUpdate then frame.scripts.OnUpdate(frame, elapsed) end end
+        local due = {}
+        for _, timer in ipairs(self.timers) do if not timer.canceled and timer.at <= self.time then due[#due + 1] = timer end end
+        for _, timer in ipairs(due) do
+            if timer.interval then timer.at = self.time + timer.interval else timer.canceled = true end
+            timer.callback(timer)
         end
     end
     function state:call(frame, script, ...)
