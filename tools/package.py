@@ -7,7 +7,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 def package():
     root = Path(__file__).resolve().parents[1]
     addon = root / "ForeverXP"
-    required = ["ForeverXP.toc", "Core.lua", "Options.lua", "Textures/Glow.tga", "Textures/Shine.tga"]
+    required = ["ForeverXP.toc", "Core.lua", "Options.lua", "Minimap.lua", "Textures/Glow.tga", "Textures/Shine.tga"]
     for name in required:
         if not (addon / name).is_file():
             raise FileNotFoundError(f"Missing addon file: {name}")

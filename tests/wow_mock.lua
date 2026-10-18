@@ -5,9 +5,13 @@ local unpack = unpack or table.unpack
 local Object = {}
 Object.__index = Object
 
-function Object:SetSize(width, height) self.width, self.height = width, height end
-function Object:SetWidth(value) self.width = value end
-function Object:SetHeight(value) self.height = value end
+function Object:SetSize(width, height)
+    local changed = self.width ~= width or self.height ~= height
+    self.width, self.height = width, height
+    if changed and self.scripts.OnSizeChanged then self.scripts.OnSizeChanged(self, width, height) end
+end
+function Object:SetWidth(value) self:SetSize(value, self:GetHeight()) end
+function Object:SetHeight(value) self:SetSize(self:GetWidth(), value) end
 function Object:GetWidth() return self.width or 0 end
 function Object:GetHeight() return self.height or 0 end
 function Object:SetPoint(...) self.point = { ... } end
@@ -18,7 +22,13 @@ function Object:SetParent(parent) self.parent = parent end
 function Object:GetParent() return self.parent end
 function Object:SetScale(scale) self.scale = scale end
 function Object:GetScale() return self.scale or 1 end
-function Object:GetEffectiveScale() return self:GetScale() end
+function Object:GetEffectiveScale()
+    return self:GetScale() * (self.parent and self.parent:GetEffectiveScale() or 1)
+end
+function Object:GetCenter()
+    if self.centerX then return self.centerX, self.centerY end
+    return self:GetWidth() / 2, self:GetHeight() / 2
+end
 function Object:SetAlpha(alpha) self.alpha = alpha end
 function Object:GetAlpha() return self.alpha or 1 end
 function Object:Show()
@@ -173,11 +183,19 @@ function Mock.install(overrides)
         objects = {}, time = 0, xp = 250, xpMax = 1000, rested = 350,
         playerLevel = 20, maxLevel = 90, messages = {}, openedSettings = nil,
         interfaceVersion = 120100,
+        minimapWidth = 140, minimapHeight = 140, minimapScale = 1,
+        minimapCenterX = 1760, minimapCenterY = 920, minimapShape = "ROUND",
+        cursorX = 960, cursorY = 540, uiScale = 1,
     }
     for key, value in pairs(overrides or {}) do state[key] = value end
 
     _G.UIParent = newObject(state, "Frame", "UIParent")
     UIParent:SetSize(1920, 1080)
+    UIParent:SetScale(state.uiScale)
+    _G.Minimap = newObject(state, "Frame", "Minimap", UIParent)
+    Minimap:SetSize(state.minimapWidth, state.minimapHeight)
+    Minimap:SetScale(state.minimapScale)
+    Minimap.centerX, Minimap.centerY = state.minimapCenterX, state.minimapCenterY
     _G.CreateFrame = function(kind, name, parent, template)
         local frame = newObject(state, kind, name, parent or UIParent)
         frame.template = template
@@ -202,7 +220,8 @@ function Mock.install(overrides)
     _G.issecretvalue = function(value) return state.secretValue ~= nil and value == state.secretValue end
     _G.UnitName = function() return "TestPlayer" end
     _G.IsShiftKeyDown = function() return state.shiftDown or false end
-    _G.GetCursorPosition = function() return 960, 540 end
+    _G.GetCursorPosition = function() return state.cursorX, state.cursorY end
+    _G.GetMinimapShape = function() return state.minimapShape end
     _G.GetLocale = function() return "enUS" end
     _G.SlashCmdList = {}
     _G.UISpecialFrames = {}

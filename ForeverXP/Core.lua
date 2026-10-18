@@ -24,16 +24,19 @@ addon.defaults = {
     locked = true,
     reducedMotion = false,
     hideAtMax = true,
+    showMinimap = true,
+    minimapAngle = 225,
     position = { point = "BOTTOM", relativePoint = "BOTTOM", x = 0, y = 180 },
 }
 
 local ranges = {
     speed = { 0.05, 2 }, brightness = { 0.15, 1 }, glow = { 0, 1 },
     width = { 240, 1200 }, height = { 12, 48 }, scale = { 0.5, 2 },
+    minimapAngle = { 0, 360 },
 }
 local booleanKeys = {
     showText = true, showRested = true, locked = true,
-    reducedMotion = true, hideAtMax = true,
+    reducedMotion = true, hideAtMax = true, showMinimap = true,
 }
 
 local function isNumber(value)
@@ -124,7 +127,11 @@ function addon:SetSetting(key, value)
     else
         return
     end
-    self:Refresh()
+    if key == "minimapAngle" or key == "showMinimap" then
+        if self.RefreshMinimapButton then self:RefreshMinimapButton() end
+    else
+        self:Refresh()
+    end
 end
 
 function addon:SetColor(red, green, blue)
@@ -252,6 +259,7 @@ function addon:Refresh()
     self:ApplyLayout()
     self:UpdateXP()
     self:Paint()
+    if self.RefreshMinimapButton then self:RefreshMinimapButton() end
 end
 
 function addon:ShowTooltip()
@@ -396,13 +404,17 @@ local function slashCommand(message)
     elseif command == "preview" then
         addon:SetPreview(not addon.previewEnabled)
         say(addon.previewEnabled and "Sample XP preview enabled." or "Sample XP preview disabled.")
+    elseif command == "minimap" then
+        addon:SetSetting("showMinimap", not addon.db.showMinimap)
+        if addon.RefreshOptions then addon:RefreshOptions() end
+        say(addon.db.showMinimap and "Minimap button shown." or "Minimap button hidden. Use /fxp minimap to show it again.")
     elseif command == "solid" or command == "rainbow" or command == "pulse" then
         addon:SetSetting("mode", command)
         if addon.RefreshOptions then addon:RefreshOptions() end
     elseif command == "" or command == "options" then
         addon:ToggleOptions()
     else
-        say("/fxp opens settings. Commands: rainbow, solid, pulse, lock, preview, reset.")
+        say("/fxp opens settings. Commands: rainbow, solid, pulse, lock, preview, minimap, reset.")
     end
 end
 
@@ -420,6 +432,7 @@ addon.events:SetScript("OnEvent", function(frame, event, unit)
     elseif event == "PLAYER_LOGIN" then
         if not addon.db then ForeverXPDB = sanitize(ForeverXPDB); addon.db = ForeverXPDB end
         addon:CreateBar()
+        if addon.CreateMinimapButton then addon:CreateMinimapButton() end
         for _, name in ipairs({
             "PLAYER_ENTERING_WORLD", "PLAYER_XP_UPDATE", "UPDATE_EXHAUSTION", "PLAYER_LEVEL_UP",
             "PLAYER_UPDATE_RESTING", "PLAYER_MAX_LEVEL_UPDATE", "UPDATE_EXPANSION_LEVEL",

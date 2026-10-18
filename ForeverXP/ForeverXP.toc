@@ -2,8 +2,9 @@
 ## Title: ForeverXP
 ## Notes: A customizable XP bar with animated rainbow, pulse, and glow effects.
 ## Author: ForeverXP Contributors
-## Version: 1.0.1
+## Version: 1.0.2
 ## SavedVariables: ForeverXPDB
 
 Core.lua
 Options.lua
+Minimap.lua

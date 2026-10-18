@@ -8,6 +8,7 @@ A Lua addon for **World of Warcraft Retail** that gives your leveling XP bar ani
 2. Confirm the path is `_retail_/Interface/AddOns/ForeverXP/ForeverXP.toc`, without an extra nested directory.
 3. Start WoW, enable **ForeverXP** on the character selection AddOns screen, and log in. If WoW is already open, restart it so it discovers the addon.
 4. Type **`/fxp`** or **`/foreverxp`** to open the appearance panel. The bar starts near the bottom center of the screen, above the default action bars.
+5. In **1.0.2**, you can also left-click the **ForeverXP minimap button** to open settings. Drag the button around the minimap to reposition it; right-click it to lock or unlock the XP bar. Its visibility is independent of the bar, so settings remain accessible at maximum level.
 
 The selected client target is Retail. For a server with a customized client, its client version and API must match; Vanilla and Wrath clients are not supported by this build. If a future Retail patch marks the addon out of date, check its API compatibility before updating the TOC's Interface number.
 
@@ -26,6 +27,7 @@ If incompatibility remains, run `/run print(GetBuildInfo())` in chat. The first 
 - Adjust width, height, and scale; toggle XP text and the blue rested XP overlay.
 - Unlock the bar in **Layout & behavior**, then drag it with the left mouse button. Right-click the bar to open settings.
 - Enable **Reduce motion** for a stationary rainbow or a still base color. Disable glow with its intensity slider.
+- Hide the minimap button under **Layout & behavior**, or toggle it with `/fxp minimap`. Its position and visibility are saved with your other preferences.
 
 Settings show clearly labeled **sample XP** so you can see the effects even at maximum level. Closing settings restores your real XP. The bar hides at your current maximum level by default; turn that off in Layout & behavior if desired. All appearance and position preferences are saved per account in WoW's SavedVariables when you log out or reload the UI.
 
@@ -39,6 +41,7 @@ ForeverXP provides a separate customizable XP bar. Blizzard's default XP, reputa
 | `/fxp pulse` | Use the breathing effect |
 | `/fxp lock` | Toggle dragging |
 | `/fxp preview` | Toggle a sample bar without the settings panel |
+| `/fxp minimap` | Show or hide the minimap button |
 | `/fxp reset` | Reset appearance and position |
 
 ## Development and checks
@@ -58,7 +61,7 @@ python3 -m pip install --target /tmp/foreverxp-lua lupa==2.6
 PYTHONPATH=/tmp/foreverxp-lua python3 -c 'from lupa.lua51 import LuaRuntime; LuaRuntime().execute("dofile(\"tests/run.lua\")")'
 ```
 
-The tests load the actual addon through its TOC and exercise XP/rested updates, animation and reduced motion, saved preferences, invalid saved data, maximum-level behavior, dragging, and settings controls. They do not emulate WoW rendering or prove that a particular custom server permits addons.
+The tests load the actual addon through its TOC and exercise XP/rested updates, animation and reduced motion, saved preferences, invalid saved data, maximum-level behavior, dragging, settings controls, and minimap interactions. They do not emulate WoW rendering or prove that a particular custom server permits addons.
 
 Build the installable package:
 
@@ -77,5 +80,6 @@ An actual WoW client is required to complete visual and integration validation:
 3. Open `/fxp`; try all effects and RGB sliders, disable glow, and enable reduced motion.
 4. Unlock, move, resize, and scale the bar, then `/reload` to confirm preferences persist.
 5. On a character at maximum level, confirm the default bar is hidden, settings show a sample, and closing settings hides it again.
+6. Left-click the minimap button to open settings, right-click to toggle the bar lock, and drag it around the edge. Hide/show it with `/fxp minimap`, then `/reload` to confirm its visibility and position persist. Confirm it remains available when XP is hidden at maximum level.
 
 No in-game validation is claimed by the automated tests.
