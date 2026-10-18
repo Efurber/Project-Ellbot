@@ -25,13 +25,22 @@ local function loadAddon(saved, overrides)
     _G.ForeverXPDB = saved
     local addon = {}
     local toc = assert(io.open(root .. "/ForeverXP/ForeverXP.toc", "r"))
+    local files, supportedInterfaces = {}, {}
     for line in toc:lines() do
+        local interfaces = line:match("^##%s*Interface:%s*(.-)%s*$")
+        if interfaces then
+            for interface in interfaces:gmatch("%d+") do supportedInterfaces[tonumber(interface)] = true end
+        end
         local file = line:match("^%s*(.-%.lua)%s*$")
         if file and not file:match("^#") then
-            assert(loadfile(root .. "/ForeverXP/" .. file))("ForeverXP", addon)
+            files[#files + 1] = file
         end
     end
     toc:close()
+    assert(supportedInterfaces[state.interfaceVersion], "TOC does not declare interface " .. state.interfaceVersion)
+    for _, file in ipairs(files) do
+        assert(loadfile(root .. "/ForeverXP/" .. file))("ForeverXP", addon)
+    end
     state:fire("ADDON_LOADED", "ForeverXP")
     state:fire("PLAYER_LOGIN")
     assert(addon.bar and addon.fill and addon.state, "addon did not initialize its XP bar")
@@ -59,6 +68,28 @@ local function rainbowColors(addon)
     end
     return colors
 end
+
+test("manifest admits mocked 12.1.0 and 12.1.5 clients for XP and settings", function()
+    for _, client in ipairs({ { 120100, "12.1.0" }, { 120105, "12.1.5" } }) do
+        local addon, state = loadAddon(nil, { interfaceVersion = client[1] })
+        local version, _, _, interface = GetBuildInfo()
+        equal(version, client[2], "mock client version")
+        equal(interface, client[1], "mock client interface")
+        equal(addon.fill:GetValue(), 250)
+        state.xp = 400
+        state:fire("PLAYER_XP_UPDATE", "player")
+        equal(addon.fill:GetValue(), 400)
+        addon:ToggleOptions()
+        assert(addon.optionsFrame:IsShown(), "settings should open under each declared mock client")
+        state:call(findCaption(state, "Solid color"), "OnClick")
+        equal(addon:GetSettings().mode, "solid")
+        addon:ToggleOptions()
+        equal(addon.fill:GetValue(), 400, "settings should restore live XP")
+    end
+    local ok, failure = pcall(loadAddon, nil, { interfaceVersion = 120001 })
+    assert(not ok and tostring(failure):find("TOC does not declare interface 120001", 1, true),
+        "the loader must reject interfaces omitted by the manifest")
+end)
 
 test("XP and rested XP follow player events", function()
     local addon, state = loadAddon()

@@ -1,6 +1,6 @@
 # ForeverXP
 
-A Lua addon for **World of Warcraft Retail** that gives your leveling XP bar animated RGB color. Built for current Retail interface **120105 (12.1.5)**; no libraries, accounts, or network services are required.
+A Lua addon for **World of Warcraft Retail** that gives your leveling XP bar animated RGB color. Supports Retail **12.1.0 (Interface 120100)** and **12.1.5 (Interface 120105)**; no libraries, accounts, or network services are required.
 
 ## Install
 
@@ -10,6 +10,12 @@ A Lua addon for **World of Warcraft Retail** that gives your leveling XP bar ani
 4. Type **`/fxp`** or **`/foreverxp`** to open the appearance panel. The bar starts near the bottom center of the screen, above the default action bars.
 
 The selected client target is Retail. For a server with a customized client, its client version and API must match; Vanilla and Wrath clients are not supported by this build. If a future Retail patch marks the addon out of date, check its API compatibility before updating the TOC's Interface number.
+
+### If WoW reports an incompatible addon
+
+Version **1.0.1** corrects the original package's 12.1.5-only Interface declaration to include **12.1.0**. Exit WoW, replace the old `ForeverXP` addon folder with this package, then restart the client. Your saved appearance settings are kept in WoW's separate WTF folder.
+
+If incompatibility remains, run `/run print(GetBuildInfo())` in chat. The first number is the game client version; the last is its Interface number. Version numbers shown on other addons can describe those addons' own releases and do not necessarily identify your game client. An actual **1.6.3 game client** requires a different addon implementation; this Retail build does not support it.
 
 ## Make it yours
 

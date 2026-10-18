@@ -172,6 +172,7 @@ function Mock.install(overrides)
     local state = {
         objects = {}, time = 0, xp = 250, xpMax = 1000, rested = 350,
         playerLevel = 20, maxLevel = 90, messages = {}, openedSettings = nil,
+        interfaceVersion = 120100,
     }
     for key, value in pairs(overrides or {}) do state[key] = value end
 
@@ -191,7 +192,11 @@ function Mock.install(overrides)
     _G.GetMaxLevelForPlayerExpansion = function() return state.maxLevel end
     _G.GetAccountExpansionLevel = function() return 11 end
     _G.GetExpansionLevel = function() return 11 end
-    _G.GetBuildInfo = function() return "12.0.1", "00000", "Oct 18 2026", 120001 end
+    _G.GetBuildInfo = function()
+        local interface = state.interfaceVersion
+        local version = string.format("%d.%d.%d", math.floor(interface / 10000), math.floor(interface / 100) % 100, interface % 100)
+        return version, "00000", "Oct 18 2026", interface
+    end
     _G.IsXPUserDisabled = function() return state.xpDisabled or false end
     _G.InCombatLockdown = function() return state.inCombat or false end
     _G.issecretvalue = function(value) return state.secretValue ~= nil and value == state.secretValue end
