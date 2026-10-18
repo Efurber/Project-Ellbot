@@ -1,8 +1,8 @@
-## Interface: 120100, 120105
+## Interface: 16001, 120100, 120105
 ## Title: ForeverXP
-## Notes: A customizable XP bar with animated rainbow, pulse, and glow effects.
+## Notes: A customizable XP bar for WoW Forever and Retail with RGB effects and a minimap button.
 ## Author: ForeverXP Contributors
-## Version: 1.0.2
+## Version: 1.0.3
 ## SavedVariables: ForeverXPDB
 
 Core.lua

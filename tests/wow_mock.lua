@@ -181,13 +181,20 @@ end
 function Mock.install(overrides)
     local state = {
         objects = {}, time = 0, xp = 250, xpMax = 1000, rested = 350,
-        playerLevel = 20, maxLevel = 90, messages = {}, openedSettings = nil,
-        interfaceVersion = 120100,
+        playerLevel = 20, messages = {}, openedSettings = nil,
+        interfaceVersion = 16001,
         minimapWidth = 140, minimapHeight = 140, minimapScale = 1,
         minimapCenterX = 1760, minimapCenterY = 920, minimapShape = "ROUND",
         cursorX = 960, cursorY = 540, uiScale = 1,
     }
     for key, value in pairs(overrides or {}) do state[key] = value end
+    if state.maxLevel == nil then state.maxLevel = state.interfaceVersion == 16001 and 60 or 90 end
+
+    _G.WOW_PROJECT_MAINLINE, _G.WOW_PROJECT_CAMELOT = 1, 18
+    _G.WOW_PROJECT_ID = state.interfaceVersion == 16001 and WOW_PROJECT_CAMELOT or WOW_PROJECT_MAINLINE
+    _G.GameRulesUtil = {
+        IsPlayerAtEffectiveMaxLevel = function() return state.playerLevel >= state.maxLevel end,
+    }
 
     _G.UIParent = newObject(state, "Frame", "UIParent")
     UIParent:SetSize(1920, 1080)

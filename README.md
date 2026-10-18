@@ -1,22 +1,22 @@
 # ForeverXP
 
-A Lua addon for **World of Warcraft Retail** that gives your leveling XP bar animated RGB color. Supports Retail **12.1.0 (Interface 120100)** and **12.1.5 (Interface 120105)**; no libraries, accounts, or network services are required.
+A Lua addon for **WoW Forever 1.60.1 (Interface 16001)** that gives your leveling XP bar animated RGB color and provides a draggable minimap button. Also declares support for Retail **12.1.0 (Interface 120100)** and **12.1.5 (Interface 120105)**. No libraries, accounts, or network services are required.
 
 ## Install
 
-1. Download or build `dist/ForeverXP.zip` and extract it into your WoW installation's `_retail_/Interface/AddOns/` folder. You can also copy the repository's `ForeverXP` folder there directly.
-2. Confirm the path is `_retail_/Interface/AddOns/ForeverXP/ForeverXP.toc`, without an extra nested directory.
+1. Download or build `dist/ForeverXP.zip` and extract it into the **`Interface/AddOns/` folder used by your WoW Forever client**, alongside your other working addons. You can also copy the repository's `ForeverXP` folder there directly. Retail users use their `_retail_/Interface/AddOns/` folder.
+2. Confirm the path ends in `Interface/AddOns/ForeverXP/ForeverXP.toc`, without an extra nested directory.
 3. Start WoW, enable **ForeverXP** on the character selection AddOns screen, and log in. If WoW is already open, restart it so it discovers the addon.
 4. Type **`/fxp`** or **`/foreverxp`** to open the appearance panel. The bar starts near the bottom center of the screen, above the default action bars.
 5. In **1.0.2**, you can also left-click the **ForeverXP minimap button** to open settings. Drag the button around the minimap to reposition it; right-click it to lock or unlock the XP bar. Its visibility is independent of the bar, so settings remain accessible at maximum level.
 
-The selected client target is Retail. For a server with a customized client, its client version and API must match; Vanilla and Wrath clients are not supported by this build. If a future Retail patch marks the addon out of date, check its API compatibility before updating the TOC's Interface number.
+The primary target is **WoW Forever 1.60.1**, a contemporary client with its own Interface number. It is different from the original 2005-era 1.6 client. The supported-version declaration is based on the [1.60.1 client UI source](https://github.com/Gethe/wow-ui-source/tree/1.60.1) and its addon APIs. Custom server clients must expose those APIs. Older original Vanilla and Wrath clients are not covered by this build.
 
 ### If WoW reports an incompatible addon
 
-Version **1.0.1** corrects the original package's 12.1.5-only Interface declaration to include **12.1.0**. Exit WoW, replace the old `ForeverXP` addon folder with this package, then restart the client. Your saved appearance settings are kept in WoW's separate WTF folder.
+Version **1.0.3** adds the correct **16001** Interface declaration for **WoW Forever 1.60.1**, retaining the minimap button introduced in 1.0.2 and Retail declarations from 1.0.1. Exit WoW, replace the old `ForeverXP` addon folder in your Forever client's AddOns directory with this package, then restart the client. Your saved appearance settings are kept in WoW's separate WTF folder.
 
-If incompatibility remains, run `/run print(GetBuildInfo())` in chat. The first number is the game client version; the last is its Interface number. Version numbers shown on other addons can describe those addons' own releases and do not necessarily identify your game client. An actual **1.6.3 game client** requires a different addon implementation; this Retail build does not support it.
+If incompatibility remains, check the installed `ForeverXP.toc`: it should show `## Version: 1.0.3` and an Interface line containing `16001`. Confirm you replaced the folder used by the Forever client you actually launch. Where Lua chat commands are available, `/run print(GetBuildInfo())` reports the game version and Interface number; it is not required to use ForeverXP. Version numbers shown on other addons can describe those addons' own releases and do not necessarily identify your game client.
 
 ## Make it yours
 

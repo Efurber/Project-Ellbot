@@ -69,12 +69,15 @@ local function rainbowColors(addon)
     return colors
 end
 
-test("manifest admits mocked 12.1.0 and 12.1.5 clients for XP and settings", function()
-    for _, client in ipairs({ { 120100, "12.1.0" }, { 120105, "12.1.5" } }) do
+test("manifest admits mocked Forever 1.60.1 and Retail clients for XP and settings", function()
+    for _, client in ipairs({ { 16001, "1.60.1", 60 }, { 120100, "12.1.0", 90 }, { 120105, "12.1.5", 90 } }) do
         local addon, state = loadAddon(nil, { interfaceVersion = client[1] })
         local version, _, _, interface = GetBuildInfo()
         equal(version, client[2], "mock client version")
         equal(interface, client[1], "mock client interface")
+        equal(state.maxLevel, client[3], "mock client maximum level")
+        equal(WOW_PROJECT_ID, client[1] == 16001 and WOW_PROJECT_CAMELOT or WOW_PROJECT_MAINLINE,
+            "mock client project family")
         equal(addon.fill:GetValue(), 250)
         state.xp = 400
         state:fire("PLAYER_XP_UPDATE", "player")
@@ -208,7 +211,7 @@ test("invalid saved settings are sanitized and resets are independent", function
 end)
 
 test("max level hiding and preview restore actual XP", function()
-    local addon, state = loadAddon(nil, { playerLevel = 90, xp = 0, xpMax = 0 })
+    local addon, state = loadAddon(nil, { interfaceVersion = 120100, playerLevel = 90, xp = 0, xpMax = 0 })
     assert(not addon.bar:IsShown(), "maximum-level bar should hide by default")
     addon:SetPreview(true)
     assert(addon.bar:IsShown(), "preview should remain usable at maximum level")
@@ -225,8 +228,34 @@ test("max level hiding and preview restore actual XP", function()
     near(addon.state.ratio, 0.2)
 end)
 
+test("Forever level 60 hides XP while minimap settings and preview remain accessible", function()
+    local addon, state = loadAddon(nil, { playerLevel = 59, xp = 800, xpMax = 1000 })
+    equal(select(4, GetBuildInfo()), 16001)
+    equal(WOW_PROJECT_ID, 18, "Forever uses the Camelot project family")
+    equal(state.maxLevel, 60)
+    assert(not GameRulesUtil.IsPlayerAtEffectiveMaxLevel())
+    assert(addon.bar:IsShown(), "Forever leveling XP should remain visible below level 60")
+    state.xp = 950
+    state:fire("PLAYER_XP_UPDATE", "player")
+    equal(addon.fill:GetValue(), 950)
+    near(addon.state.ratio, 0.95)
+    state.playerLevel, state.xp, state.xpMax = 60, 0, 0
+    state:fire("PLAYER_LEVEL_UP", 60)
+    assert(GameRulesUtil.IsPlayerAtEffectiveMaxLevel())
+    assert(not addon.bar:IsShown(), "Forever level 60 should hide the XP bar")
+    assert(addon.minimapButton:IsShown(), "Forever max-level settings must remain accessible")
+    state:call(addon.minimapButton, "OnClick", "LeftButton")
+    assert(addon.optionsFrame:IsShown())
+    assert(addon.previewEnabled and addon.bar:IsShown(), "Forever max-level settings should show sample XP")
+    assert(addon.state.ratio > 0 and addon.state.ratio < 1)
+    state:call(addon.minimapButton, "OnClick", "LeftButton")
+    assert(not addon.optionsFrame:IsShown())
+    assert(not addon.bar:IsShown(), "closing Forever preview should restore max-level hiding")
+    assert(addon.minimapButton:IsShown())
+end)
+
 test("restricted XP hides safely and recovers when public data returns", function()
-    local addon, state = loadAddon()
+    local addon, state = loadAddon(nil, { interfaceVersion = 120100 })
     local restricted = setmetatable({}, {
         __add = function() error("restricted XP must never be added") end,
         __lt = function() error("restricted XP must never be compared") end,
@@ -327,7 +356,7 @@ test("slash commands control appearance and refresh an open settings window", fu
 end)
 
 test("minimap launcher opens settings, toggles lock, and remains available at max level", function()
-    local addon, state = loadAddon(nil, { playerLevel = 90, xp = 0, xpMax = 0 })
+    local addon, state = loadAddon(nil, { interfaceVersion = 120100, playerLevel = 90, xp = 0, xpMax = 0 })
     local launcher = assert(addon.minimapButton, "minimap launcher should be created at login")
     equal(launcher:GetParent(), Minimap)
     assert(not addon.bar:IsShown(), "maximum-level XP bar should remain hidden")
